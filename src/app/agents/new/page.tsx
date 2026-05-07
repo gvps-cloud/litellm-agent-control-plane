@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check } from "lucide-react";
+import { Check, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -15,13 +15,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   ApiError,
   McpRow,
@@ -46,6 +39,7 @@ export default function NewAgentPage() {
 
   const [name, setName] = useState("");
   const [model, setModel] = useState(DEFAULT_MODEL);
+  const [modelQuery, setModelQuery] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [selectedMcps, setSelectedMcps] = useState<Set<string>>(new Set());
   const [apiKey, setApiKey] = useState(DEFAULT_KEY);
@@ -90,6 +84,11 @@ export default function NewAgentPage() {
     () => [...models].sort((a, b) => a.id.localeCompare(b.id)),
     [models],
   );
+  const filteredModels = useMemo(() => {
+    const q = modelQuery.trim().toLowerCase();
+    if (!q) return sortedModels;
+    return sortedModels.filter((m) => m.id.toLowerCase().includes(q));
+  }, [sortedModels, modelQuery]);
   const sortedMcps = useMemo(
     () =>
       [...mcps].sort((a, b) =>
@@ -180,31 +179,87 @@ export default function NewAgentPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="model">Model</Label>
+              <Label htmlFor="model-search">Model</Label>
               {sortedModels.length > 0 ? (
-                <Select
-                  value={model}
-                  onValueChange={(v) => setModel(v ?? "")}
-                  disabled={submitting}
-                >
-                  <SelectTrigger id="model" className="w-full font-mono text-xs">
-                    <SelectValue placeholder="Select a model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {sortedModels.map((m) => (
-                      <SelectItem
-                        key={m.id}
-                        value={m.id}
-                        className="font-mono text-xs"
+                <>
+                  <div className="relative">
+                    <Search
+                      className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+                      aria-hidden
+                    />
+                    <Input
+                      id="model-search"
+                      type="search"
+                      value={modelQuery}
+                      onChange={(e) => setModelQuery(e.target.value)}
+                      placeholder={`Search ${sortedModels.length} models…`}
+                      disabled={submitting}
+                      className="pl-8 font-mono text-xs"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="rounded-lg border bg-card">
+                    {filteredModels.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-muted-foreground">
+                        No models match{" "}
+                        <span className="font-mono">
+                          &quot;{modelQuery.trim()}&quot;
+                        </span>
+                        .
+                      </p>
+                    ) : (
+                      <ul
+                        role="listbox"
+                        aria-label="Models"
+                        className="max-h-64 divide-y overflow-y-auto"
                       >
-                        {m.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                        {filteredModels.map((m) => {
+                          const selected = m.id === model;
+                          return (
+                            <li key={m.id}>
+                              <button
+                                type="button"
+                                role="option"
+                                aria-selected={selected}
+                                onClick={() => setModel(m.id)}
+                                disabled={submitting}
+                                className={cn(
+                                  "flex w-full items-center gap-3 px-3 py-1.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                                  selected && "bg-accent/30",
+                                )}
+                              >
+                                <span
+                                  className={cn(
+                                    "grid size-4 shrink-0 place-items-center rounded-full border transition-colors",
+                                    selected
+                                      ? "border-foreground bg-foreground text-background"
+                                      : "border-border bg-transparent",
+                                  )}
+                                  aria-hidden
+                                >
+                                  {selected ? (
+                                    <Check className="size-3" />
+                                  ) : null}
+                                </span>
+                                <span className="truncate font-mono text-xs text-foreground">
+                                  {m.id}
+                                </span>
+                                {m.owned_by ? (
+                                  <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
+                                    {m.owned_by}
+                                  </span>
+                                ) : null}
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                </>
               ) : (
                 <Input
-                  id="model"
+                  id="model-search"
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
                   placeholder={DEFAULT_MODEL}
@@ -216,7 +271,7 @@ export default function NewAgentPage() {
                 {loadingMeta
                   ? "Loading models from proxy…"
                   : sortedModels.length > 0
-                    ? `${sortedModels.length} model${sortedModels.length === 1 ? "" : "s"} available on this proxy.`
+                    ? <>Selected: <span className="font-mono text-foreground">{model}</span></>
                     : "No models returned by proxy. Type a model id manually."}
               </p>
             </div>
