@@ -2,14 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  PanelLeft,
-  Search,
-  Layers,
-  Workflow,
-  Boxes,
-  PlugZap,
-} from "lucide-react";
+import { PanelLeft, Search, Layers, Workflow } from "lucide-react";
 
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
@@ -40,18 +33,6 @@ const NAV: readonly NavItem[] = [
     label: "Sessions",
     Icon: Workflow,
     isActive: (p) => p.startsWith("/sessions"),
-  },
-  {
-    href: "/models",
-    label: "Models",
-    Icon: Boxes,
-    isActive: (p) => p === "/models",
-  },
-  {
-    href: "/mcps",
-    label: "MCP Servers",
-    Icon: PlugZap,
-    isActive: (p) => p === "/mcps",
   },
 ];
 
