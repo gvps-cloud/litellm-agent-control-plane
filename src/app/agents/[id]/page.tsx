@@ -2,26 +2,10 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Play, RefreshCw } from "lucide-react";
+import { ChevronRight, Loader2, Play, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   AgentRow,
   ApiError,
@@ -46,6 +30,22 @@ function formatTime(iso?: string | null): string {
   }
 }
 
+function formatRelative(iso?: string | null): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return iso;
+  const diffMs = Date.now() - then;
+  if (diffMs < 0) return "just now";
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  return `${day}d ago`;
+}
+
 function statusVariant(
   status: string,
 ): "default" | "secondary" | "destructive" | "outline" {
@@ -53,6 +53,15 @@ function statusVariant(
   if (status === "creating") return "secondary";
   if (status === "failed") return "destructive";
   return "outline";
+}
+
+function repoShortLabel(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.pathname.replace(/^\//, "").replace(/\.git$/, "") || u.host;
+  } catch {
+    return url;
+  }
 }
 
 export default function AgentDetailPage({ params }: PageProps) {
@@ -70,13 +79,7 @@ export default function AgentDetailPage({ params }: PageProps) {
     setLoading(true);
     setError(null);
     try {
-      // Load agent + sessions in parallel; templates separately because the
-      // template lookup is "best effort" — a 5xx on /sandbox-templates
-      // shouldn't break the page.
-      const [a, s] = await Promise.all([
-        getAgent(id),
-        listSessions(id),
-      ]);
+      const [a, s] = await Promise.all([getAgent(id), listSessions(id)]);
       setAgent(a);
       setSessions(s);
       try {
@@ -111,26 +114,34 @@ export default function AgentDetailPage({ params }: PageProps) {
     }
   }
 
+  const displayName = agent?.name?.trim() || "Untitled agent";
+
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-8">
-      <div className="flex items-center justify-end gap-2">
+    <div className="mx-auto w-full max-w-4xl px-6 py-10">
+      {/* Breadcrumb + refresh */}
+      <div className="flex items-center justify-between text-[12px] text-muted-foreground">
+        <nav aria-label="Breadcrumb" className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => router.push("/agents")}
+            className="rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            Agents
+          </button>
+          <ChevronRight className="size-3" aria-hidden />
+          <span className="truncate font-mono text-[11px] text-foreground">
+            {agent?.id ?? id}
+          </span>
+        </nav>
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
           onClick={() => void load()}
           disabled={loading || spawning}
           aria-label="Refresh"
+          className="h-7 px-2 text-muted-foreground hover:text-foreground"
         >
-          <RefreshCw className={loading ? "animate-spin" : ""} />
-          Refresh
-        </Button>
-        <Button
-          size="sm"
-          onClick={() => void handleSpawn()}
-          disabled={!agent || spawning}
-        >
-          <Play />
-          {spawning ? "Spawning…" : "Spawn session"}
+          <RefreshCw className={loading ? "size-3.5 animate-spin" : "size-3.5"} />
         </Button>
       </div>
 
@@ -140,127 +151,133 @@ export default function AgentDetailPage({ params }: PageProps) {
         </div>
       ) : null}
 
-      {spawning ? (
-        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          Provisioning Fargate task and harness — this typically takes 50–90
-          seconds. Don&rsquo;t leave the page.
-        </div>
-      ) : null}
-
       {agent ? (
         <>
-          <div className="mt-6">
-            <h1 className="text-[22px] font-semibold tracking-tight">
-              {agent.name ?? agent.id}
-            </h1>
-            <p className="mt-1 font-mono text-xs text-muted-foreground">
-              {agent.id}
-            </p>
-          </div>
-
-          <div className="mt-6 grid gap-6 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Configuration</CardTitle>
-                <CardDescription>
-                  Model, sandbox template, and branch override.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">
-                    Model
-                  </div>
-                  <div className="font-mono text-sm">{agent.model}</div>
-                </div>
-
-                <Separator />
-
-                <div>
-                  <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">
-                    Sandbox template
-                  </div>
-                  {template ? (
-                    <div className="space-y-1">
-                      <div className="text-sm">
-                        {template.name?.trim() || template.id}
-                        <Badge variant="secondary" className="ml-2 font-mono text-[11px]">
-                          {template.dockerfile_id}
-                        </Badge>
-                      </div>
-                      <div className="font-mono text-xs text-muted-foreground break-all">
-                        {template.repo_url}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="font-mono text-xs text-muted-foreground">
-                      {agent.template_id}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">
-                    Branch
-                  </div>
-                  <div className="font-mono text-sm">{agent.branch}</div>
-                </div>
-
-                <Separator />
-
-                <div className="text-xs tabular-nums text-muted-foreground">
+          {/* Hero */}
+          <header className="mt-6 flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0">
+              <h1
+                className={
+                  "text-[26px] font-semibold tracking-tight leading-none " +
+                  (agent.name?.trim() ? "" : "text-muted-foreground")
+                }
+              >
+                {displayName}
+              </h1>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Badge variant="secondary" className="font-mono text-[11px]">
+                  {agent.model}
+                </Badge>
+                {template ? (
+                  <Badge variant="outline" className="font-mono text-[11px]">
+                    {template.dockerfile_id}
+                  </Badge>
+                ) : null}
+                <span className="text-[12px] text-muted-foreground">
                   Created {formatTime(agent.created_at)}
-                </div>
-              </CardContent>
-            </Card>
+                </span>
+              </div>
+            </div>
+            <Button
+              size="lg"
+              onClick={() => void handleSpawn()}
+              disabled={spawning}
+              className="shrink-0"
+            >
+              {spawning ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Play className="size-4" />
+              )}
+              {spawning ? "Spawning…" : "Spawn session"}
+            </Button>
+          </header>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Sessions</CardTitle>
-                <CardDescription>
-                  Running and past sessions for this agent.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {sessions.length === 0 ? (
-                  <div className="py-8 text-center text-sm text-muted-foreground">
-                    No sessions yet. Click <span className="font-medium">Spawn session</span> to create one.
+          {spawning ? (
+            <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Provisioning Fargate task — typically 50–90 seconds. Don&rsquo;t
+              leave the page.
+            </div>
+          ) : null}
+
+          {/* Configuration */}
+          <section className="mt-8">
+            <h2 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              Configuration
+            </h2>
+            <dl className="grid gap-x-6 gap-y-3 rounded-lg border bg-card p-4 text-sm sm:grid-cols-[140px_1fr]">
+              <dt className="text-muted-foreground">Sandbox</dt>
+              <dd className="min-w-0">
+                {template ? (
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-medium">
+                      {template.name?.trim() || template.id}
+                    </span>
+                    <a
+                      href={template.repo_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="truncate font-mono text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {repoShortLabel(template.repo_url)}
+                    </a>
                   </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Status</TableHead>
-                        <TableHead>ID</TableHead>
-                        <TableHead>Created</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sessions.map((session) => (
-                        <TableRow
-                          key={session.id}
-                          onClick={() => router.push(`/sessions/${session.id}`)}
-                          className="cursor-pointer hover:bg-muted/40"
-                        >
-                          <TableCell>
-                            <Badge variant={statusVariant(session.status)}>
-                              {session.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">
-                            {session.id}
-                          </TableCell>
-                          <TableCell className="text-xs tabular-nums text-muted-foreground">
-                            {formatTime(session.created_at)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {agent.template_id}
+                  </span>
                 )}
-              </CardContent>
-            </Card>
-          </div>
+              </dd>
+
+              <dt className="text-muted-foreground">Branch</dt>
+              <dd className="font-mono text-[13px]">{agent.branch}</dd>
+
+              <dt className="text-muted-foreground">Agent ID</dt>
+              <dd className="font-mono text-[12px] text-muted-foreground break-all">
+                {agent.id}
+              </dd>
+            </dl>
+          </section>
+
+          {/* Sessions */}
+          <section className="mt-8">
+            <div className="mb-3 flex items-baseline justify-between">
+              <h2 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                Sessions
+              </h2>
+              <span className="tabular-nums text-[11px] text-muted-foreground">
+                {sessions.length}
+              </span>
+            </div>
+            {sessions.length === 0 ? (
+              <div className="rounded-lg border border-dashed bg-card/40 px-6 py-10 text-center text-sm text-muted-foreground">
+                No sessions yet. Click <span className="font-medium text-foreground">Spawn session</span> above to start one.
+              </div>
+            ) : (
+              <ul className="overflow-hidden rounded-lg border bg-card">
+                {sessions.map((session, i) => (
+                  <li
+                    key={session.id}
+                    onClick={() => router.push(`/sessions/${session.id}`)}
+                    className={
+                      "flex cursor-pointer items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-muted/50 " +
+                      (i > 0 ? "border-t" : "")
+                    }
+                  >
+                    <Badge variant={statusVariant(session.status)} className="shrink-0">
+                      {session.status}
+                    </Badge>
+                    <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-muted-foreground">
+                      {session.id}
+                    </span>
+                    <span className="shrink-0 tabular-nums text-[12px] text-muted-foreground">
+                      {formatRelative(session.created_at)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </>
       ) : !loading && !error ? (
         <div className="py-16 text-center text-sm text-muted-foreground">
