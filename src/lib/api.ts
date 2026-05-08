@@ -86,6 +86,7 @@ export interface AgentRow {
   template_id: string;
   branch: string;
   pfp_url?: string | null;
+  mcp_servers?: string[];
   created_at?: string | null;
 }
 
@@ -259,11 +260,13 @@ export interface CreateAgentRequest {
   litellm_api_key?: string;
   litellm_api_base?: string;
   pfp_url?: string;
+  mcp_servers?: string[];
 }
 
 export interface UpdateAgentRequest {
   name?: string;
   pfp_url?: string;
+  mcp_servers?: string[];
 }
 
 export function listAgents(): Promise<AgentRow[]> {
@@ -376,6 +379,34 @@ function parseModelRow(value: unknown): ModelRow | null {
   if (typeof value.created === "number") row.created = value.created;
   return row;
 }
+
+// ---------- MCP servers ----------
+
+function parseMcpRow(value: unknown): McpRow | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.server_id !== "string") return null;
+  const row: McpRow = { server_id: value.server_id };
+  if (typeof value.server_name === "string") row.server_name = value.server_name;
+  if (typeof value.alias === "string") row.alias = value.alias;
+  if (typeof value.description === "string") row.description = value.description;
+  if (typeof value.url === "string") row.url = value.url;
+  if (typeof value.transport === "string") row.transport = value.transport;
+  if (typeof value.status === "string") row.status = value.status;
+  return row;
+}
+
+export async function listMcps(): Promise<McpRow[]> {
+  const raw = await api<unknown>("GET", "/v1/mcp/server");
+  if (!Array.isArray(raw)) return [];
+  const rows: McpRow[] = [];
+  for (const item of raw) {
+    const parsed = parseMcpRow(item);
+    if (parsed) rows.push(parsed);
+  }
+  return rows;
+}
+
+// ---------- Models ----------
 
 export async function listModels(): Promise<ModelRow[]> {
   const raw = await api<OpenAIModelListResponse | unknown>("GET", "/v1/models");
