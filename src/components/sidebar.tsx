@@ -189,10 +189,10 @@ export function Sidebar() {
             aria-hidden
             className="grid h-[20px] w-[20px] place-items-center rounded-[4px] bg-foreground text-[12px] leading-none"
           >
-            🛬
+            🤖
           </span>
           <span className="text-[13px] font-semibold tracking-tight text-foreground">
-            LiteLLM
+            LiteLLM Agent Platform
           </span>
         </Link>
       </div>
