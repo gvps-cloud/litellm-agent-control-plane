@@ -6,6 +6,7 @@ import { Plus, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { AgentAvatar } from "@/components/agent-avatar";
 import {
   AgentRow,
   ApiError,
@@ -123,18 +124,24 @@ export default function AgentsListPage() {
               key={agent.id}
               onClick={() => router.push(`/agents/${agent.id}`)}
               className={
-                "flex cursor-pointer items-center gap-4 px-4 py-3 transition-colors hover:bg-muted/50 " +
+                "flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50 " +
                 (i > 0 ? "border-t" : "")
               }
             >
-              <span
-                aria-label={active ? "active" : "inactive"}
-                title={active ? "active" : "inactive"}
-                className={
-                  "inline-block size-2 shrink-0 rounded-full " +
-                  (active ? "bg-emerald-500" : "bg-muted-foreground/30")
-                }
-              />
+              <div className="relative shrink-0">
+                <AgentAvatar
+                  name={agent.name ?? agent.id}
+                  pfpUrl={agent.pfp_url}
+                  size={36}
+                />
+                {active ? (
+                  <span
+                    aria-label="active"
+                    title="active session"
+                    className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full bg-emerald-500 ring-2 ring-card"
+                  />
+                ) : null}
+              </div>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[14px] font-medium">
                   {agent.name?.trim() || (
