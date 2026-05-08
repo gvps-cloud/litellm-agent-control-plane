@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { PfpUpload } from "@/components/pfp-upload";
+import { CallAgentSnippets } from "@/components/call-agent-snippets";
 import {
   AgentRow,
   ApiError,
@@ -344,6 +345,10 @@ export default function AgentDetailPage({ params }: PageProps) {
               </ul>
             )}
           </section>
+
+          <div className="mt-8">
+            <CallAgentSnippets agentId={agent.id} />
+          </div>
         </>
       ) : !loading && !error ? (
         <div className="py-16 text-center text-sm text-muted-foreground">
