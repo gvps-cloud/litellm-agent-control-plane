@@ -36,3 +36,7 @@ CONTAINER_ENV_GITHUB_TOKEN=ghp_...   # container sees GITHUB_TOKEN=ghp_...
 ## Developer Usage
 
 Hitting the API directly with curl — create an agent, open a session, send a message, read the reply. See [`src/server/DEVELOPER.md`](src/server/DEVELOPER.md) for the full walkthrough.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
