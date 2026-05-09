@@ -39,6 +39,7 @@ import { env } from "@/server/env";
 import {
   TAG_AGENT_ID,
   TAG_SESSION_ID,
+  TAG_WARM_TASK_ID,
   type RunTaskOpts,
   type TaggedTask,
 } from "@/server/types";
@@ -115,12 +116,18 @@ function buildContainerEnv(opts: RunTaskOpts): KeyValuePair[] {
 export async function runTask(
   opts: RunTaskOpts,
 ): Promise<{ task_arn: string }> {
-  const { agent, session_id } = opts;
+  const { agent, session_id, warm_task_id } = opts;
 
-  const tags: Tag[] = [
-    { key: TAG_SESSION_ID, value: session_id },
-    { key: TAG_AGENT_ID, value: agent.agent_id },
-  ];
+  if (!session_id && !warm_task_id) {
+    throw new Error(
+      "runTask: exactly one of session_id or warm_task_id must be set",
+    );
+  }
+
+  const tags: Tag[] = [{ key: TAG_AGENT_ID, value: agent.agent_id }];
+  if (session_id) tags.push({ key: TAG_SESSION_ID, value: session_id });
+  if (warm_task_id)
+    tags.push({ key: TAG_WARM_TASK_ID, value: warm_task_id });
 
   const command = new RunTaskCommand({
     cluster: env.AWS_CLUSTER,
@@ -354,6 +361,7 @@ export async function listTaggedTasks(): Promise<TaggedTask[]> {
         task_arn: task.taskArn,
         session_id: tagValue(task.tags, TAG_SESSION_ID),
         agent_id: tagValue(task.tags, TAG_AGENT_ID),
+        warm_task_id: tagValue(task.tags, TAG_WARM_TASK_ID),
         last_status: task.lastStatus ?? "UNKNOWN",
         started_at: task.startedAt ?? null,
       });
