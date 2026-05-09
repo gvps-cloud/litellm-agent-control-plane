@@ -1,8 +1,6 @@
 # LiteLLM Agent Platform
 
-Give your team coding agents that run in real sandboxes. Each agent is a little spec — a model, a system prompt, a GitHub repo to clone — and every time someone "spawns a session" we boot a fresh AWS Fargate task running the [opencode](https://opencode.ai) harness, point it at that repo, and hand back a URL they can chat with. Models go through a [LiteLLM](https://github.com/BerriAI/litellm) gateway so spend, keys, and routing stay in one place.
-
-The whole thing is one Next.js app + a sidecar reconciler. No Python proxy, no second service to deploy.
+Self-hosted control plane for sandboxed coding agents. An agent is a `(model, prompt, repo)` spec; spawning a session boots a fresh AWS Fargate task running the [opencode](https://opencode.ai) harness against that repo. Models route through a [LiteLLM](https://github.com/BerriAI/litellm) gateway. One Next.js app + a sidecar reconciler — no second service.
 
 ## 1. Create an Agent
 
@@ -14,17 +12,11 @@ The whole thing is one Next.js app + a sidecar reconciler. No Python proxy, no s
 
 ---
 
-## For platform admins — get it running
+## For platform admins
 
-You'll need:
+Prereqs: Docker Desktop, AWS account with default VPC, Postgres, a LiteLLM gateway, Node 20+.
 
-- Docker Desktop running on your laptop (only used once, to build and push the harness image).
-- An AWS account with a default VPC and credentials that can do ECS, ECR, EC2, IAM, CloudWatch Logs, and STS.
-- A Postgres database (Neon, RDS, anywhere).
-- A LiteLLM gateway you control (this is what your agents will call for model traffic).
-- Node 20+.
-
-Clone, install, and copy the env example:
+Install:
 
 ```bash
 git clone https://github.com/BerriAI/litellm-agent-platform
@@ -33,151 +25,132 @@ npm install
 cp .env.example .env
 ```
 
-Open `.env` and fill in the obvious stuff first — `DATABASE_URL`, `MASTER_KEY` (anything ≥ 8 chars; this is what users sign in with), `AWS_REGION`, your `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, and `LITELLM_API_BASE` / `LITELLM_API_KEY`. Leave the four AWS infra fields (`AWS_TASK_DEFINITION_ARN`, `AWS_SUBNETS`, `AWS_SECURITY_GROUP`, `OPENCODE_IMAGE_URI`) blank — `setup.sh` will fill those for you.
+Fill in `.env`. Required: `DATABASE_URL`, `MASTER_KEY` (≥ 8 chars; users sign in with this), `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `LITELLM_API_BASE`, `LITELLM_API_KEY`. Leave the four `AWS_TASK_DEFINITION_ARN` / `AWS_SUBNETS` / `AWS_SECURITY_GROUP` / `OPENCODE_IMAGE_URI` lines blank.
 
-Now run setup:
+Provision AWS:
 
 ```bash
 ./setup.sh
 ```
 
-That script is plain bash + the `aws` CLI + Docker. It's idempotent — re-run it any time. It does the boring AWS yak-shaving for you: creates an ECR repo, builds `harnesses/opencode/Dockerfile` for `linux/amd64` (works on Apple Silicon via QEMU) and pushes it, creates the IAM execution role, the log group, the ECS cluster, finds a public subnet in your default VPC, opens port 4096 on a security group, and registers a Fargate task definition. When it's done it prints four lines:
+Idempotent. Creates ECR repo, builds + pushes `harnesses/opencode/Dockerfile` (`linux/amd64`), creates IAM role + log group + ECS cluster, finds a public subnet, opens port 4096, registers a Fargate task definition. Prints four env values — paste them into `.env`.
 
-```
-AWS_TASK_DEFINITION_ARN=arn:aws:ecs:us-east-1:...:task-definition/litellm-agents-opencode:1
-AWS_SUBNETS=subnet-...
-AWS_SECURITY_GROUP=sg-...
-OPENCODE_IMAGE_URI=...dkr.ecr.us-east-1.amazonaws.com/litellm-agents-opencode:abc1234
-```
-
-Paste those into `.env`, then create the database tables and start the two processes:
+Migrate + run:
 
 ```bash
 npx prisma db push
-npm run dev       # :3000 — Next.js + API
-npm run worker    # reconciler loop, 60s tick
+npm run dev       # :3000
+npm run worker    # reconciler, 60s tick
 ```
 
-Open http://localhost:3000. You'll get bounced to `/login` — paste your `MASTER_KEY` and you're in.
+Open `http://localhost:3000`, sign in at `/login`.
 
-### Giving the agent access to private things
+### Container env passthrough
 
-Anything you put in `.env` with a `CONTAINER_ENV_` prefix gets injected into every Fargate container at session start, with the prefix stripped. So if your agent needs a GitHub PAT to clone private repos:
+Anything in `.env` prefixed `CONTAINER_ENV_` is injected into every Fargate container with the prefix stripped:
 
 ```bash
-CONTAINER_ENV_GITHUB_TOKEN=ghp_...
+CONTAINER_ENV_GITHUB_TOKEN=ghp_...   # container sees GITHUB_TOKEN=ghp_...
 ```
 
-…and the harness sees `GITHUB_TOKEN=ghp_...` in its environment.
+### Cost + cleanup
 
-### What it costs
+A `ready` Fargate task runs ~$0.04/hr (0.5 vCPU + 1 GB). The reconciler kills idle sessions at 24h, capping a forgotten session at ~$1. Every `RECONCILE_INTERVAL_SECONDS`:
 
-A `ready` session = a running Fargate task = roughly **$0.04/hr** at the default 0.5 vCPU + 1 GB. The reconciler kills sessions that have been idle for 24 hours, so a forgotten tab caps out around $1 before it's reaped. The full sweep, every `RECONCILE_INTERVAL_SECONDS`:
+- Orphan tasks (no row, or row `dead/failed/stopped`) → `StopTask`. 5min grace.
+- Sessions stuck `creating` > 10min → marked failed.
+- Sessions in `ready` with `last_seen_at` > 24h → killed.
 
-- Orphan tasks (running on AWS but with no row in DB, or row says `dead`) → `StopTask`. 5-minute grace for tasks that just launched.
-- Sessions stuck in `creating` for more than 10 minutes → marked `failed`.
-- Sessions in `ready` whose `last_seen_at` is more than 24 hours old → killed (`failure_reason: "idle timeout"`).
+Manual stop: `DELETE /api/v1/managed_agents/sessions/{id}`.
 
-You can always stop a session yourself: `DELETE /api/v1/managed_agents/sessions/{id}`, or click "End session" in the UI.
+### Custom harness
 
-### Custom harnesses
+Drop a Dockerfile in `harnesses/<id>/`, re-run `./setup.sh`. Container must expose `POST /session` and `POST /session/{id}/message` on `CONTAINER_PORT`. Env injected at session start:
 
-Don't want opencode? The platform doesn't care, as long as your container exposes the same two HTTP endpoints — `POST /session` and `POST /session/{id}/message` — on `CONTAINER_PORT`. Drop your Dockerfile under `harnesses/<your-id>/` and re-run `./setup.sh`. At session start the platform injects:
-
-| Env the container sees | Where it comes from |
+| Env | Source |
 | --- | --- |
-| `REPO_URL` | the agent's `repo_url`, or `PREINSTALLED_GITHUB_REPO` if blank |
-| `BRANCH` | the agent's `branch` (default `main`) |
-| `LITELLM_API_BASE`, `LITELLM_API_KEY` | your gateway, so the harness can call models |
-| `LITELLM_DEFAULT_MODEL` | the agent's `model` |
-| `AGENT_PROMPT` | the agent's system prompt |
+| `REPO_URL` | agent `repo_url`, else `PREINSTALLED_GITHUB_REPO` |
+| `BRANCH` | agent `branch` (default `main`) |
+| `LITELLM_API_BASE` `LITELLM_API_KEY` | host env |
+| `LITELLM_DEFAULT_MODEL` | agent `model` |
+| `AGENT_PROMPT` | agent `prompt` |
 | `PORT` | `CONTAINER_PORT` |
-| `<anything>` | every `CONTAINER_ENV_<X>` you set on the host |
-
-Read those at startup (e.g. in `entrypoint.sh`) and you're done.
+| `<X>` | every host `CONTAINER_ENV_<X>` |
 
 ---
 
-## For developers — call an agent from code
+## For developers
 
-The UI is just a client of the same REST API your scripts can hit. Auth is `Authorization: Bearer <MASTER_KEY>` on every request.
-
-Spin up a session and send it a message:
+Auth: `Authorization: Bearer <MASTER_KEY>` on every request.
 
 ```bash
 KEY=$MASTER_KEY
 BASE=http://localhost:3000/api/v1/managed_agents
 
-# 1. Create an agent (one-time per (model, prompt, repo) combo)
 AGENT=$(curl -sX POST $BASE/agents \
   -H "Authorization: Bearer $KEY" -H "content-type: application/json" \
   -d '{
     "name":"code-reviewer",
     "model":"anthropic/claude-sonnet-4-6",
-    "prompt":"You are a senior engineer reviewing code for clarity and security.",
-    "repo_url":"https://github.com/BerriAI/litellm",
-    "branch":"main"
+    "prompt":"Senior engineer reviewing for clarity and security.",
+    "repo_url":"https://github.com/BerriAI/litellm"
   }' | jq -r .id)
 
-# 2. Spawn a session — this takes ~50–120s the first time as Fargate boots
 SESSION=$(curl -sX POST $BASE/agents/$AGENT/session \
   -H "Authorization: Bearer $KEY" -H "content-type: application/json" \
-  -d '{"title":"smoke-test"}' | jq -r .id)
+  -d '{"title":"smoke"}' | jq -r .id)   # ~50–120s cold
 
-# 3. Talk to it. Body and response are the opencode HTTP API verbatim.
 curl -sX POST $BASE/sessions/$SESSION/message \
   -H "Authorization: Bearer $KEY" -H "content-type: application/json" \
   -d '{"text":"What does this repo do? One sentence."}'
 
-# 4. Tear it down (otherwise the reconciler will after 24h idle)
 curl -sX DELETE $BASE/sessions/$SESSION -H "Authorization: Bearer $KEY"
 ```
 
-Same flow from TypeScript:
+TypeScript:
 
 ```ts
 const KEY = process.env.MASTER_KEY!;
 const BASE = "http://localhost:3000/api/v1/managed_agents";
-const auth = { "Authorization": `Bearer ${KEY}`, "content-type": "application/json" };
+const h = { "Authorization": `Bearer ${KEY}`, "content-type": "application/json" };
 
 const agent = await fetch(`${BASE}/agents`, {
-  method: "POST", headers: auth,
+  method: "POST", headers: h,
   body: JSON.stringify({
     model: "anthropic/claude-sonnet-4-6",
-    prompt: "Concise.",
     repo_url: "https://github.com/BerriAI/litellm",
   }),
 }).then(r => r.json());
 
 const session = await fetch(`${BASE}/agents/${agent.id}/session`, {
-  method: "POST", headers: auth, body: "{}",
-}).then(r => r.json());            // ~50–120s
+  method: "POST", headers: h, body: "{}",
+}).then(r => r.json());
 
 const reply = await fetch(`${BASE}/sessions/${session.id}/message`, {
-  method: "POST", headers: auth,
+  method: "POST", headers: h,
   body: JSON.stringify({ text: "List the top-level directories." }),
 }).then(r => r.json());
 
-await fetch(`${BASE}/sessions/${session.id}`, { method: "DELETE", headers: auth });
+await fetch(`${BASE}/sessions/${session.id}`, { method: "DELETE", headers: h });
 ```
 
-If you reuse an agent for multiple sessions, agent creation only happens once. `POST /agents/{id}/session` is the slow path — skip it by keeping a session alive between messages.
+Body + response on `/sessions/{id}/message` are the [opencode HTTP API](https://github.com/sst/opencode) verbatim. Reuse a session across messages — `POST /agents/{id}/session` is the slow path.
 
-### The full surface
+### Endpoints
 
 ```
-GET    /api/v1/managed_agents/dockerfiles            list available harnesses (currently just opencode)
-GET    /api/v1/managed_agents/agents                 list all agents
-POST   /api/v1/managed_agents/agents                 create one
-GET    /api/v1/managed_agents/agents/{id}            fetch one
-PATCH  /api/v1/managed_agents/agents/{id}            update name / pfp / mcp_servers
-POST   /api/v1/managed_agents/agents/{id}/session    spin Fargate, optional `initial_prompt`
-GET    /api/v1/managed_agents/sessions               list sessions, optional ?agent_id=
-GET    /api/v1/managed_agents/sessions/{id}          fetch one
-DELETE /api/v1/managed_agents/sessions/{id}          stop the Fargate task
-POST   /api/v1/managed_agents/sessions/{id}/message  chat (opencode-compatible body)
+GET    /api/v1/managed_agents/dockerfiles            list harnesses
+GET    /api/v1/managed_agents/agents                 list
+POST   /api/v1/managed_agents/agents                 create
+GET    /api/v1/managed_agents/agents/{id}            fetch
+PATCH  /api/v1/managed_agents/agents/{id}            update
+POST   /api/v1/managed_agents/agents/{id}/session    spawn (slow)
+GET    /api/v1/managed_agents/sessions               list, ?agent_id= optional
+GET    /api/v1/managed_agents/sessions/{id}          fetch
+DELETE /api/v1/managed_agents/sessions/{id}          stop
+POST   /api/v1/managed_agents/sessions/{id}/message  chat
 
-# passthroughs to your LiteLLM gateway, for the model + MCP pickers in the UI
+# passthroughs to LITELLM_API_BASE
 GET    /api/v1/models
 GET    /api/v1/mcp/server
 GET    /api/mcp-rest/tools/list?server_id=...
