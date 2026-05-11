@@ -96,7 +96,7 @@ core/dispatcher.forwardSessionEvent(session_id, event)
 
 ## Env vars
 
-See `.env.example`. The integration is OFF unless all three env vars for the medium are set (`LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET` for Linear). Disabled providers don't register; their routes return 404. `INTEGRATION_TOKEN_KEY` is required in production for token encryption at rest.
+See `.env.example`. The integration is OFF unless all three env vars for the medium are set (`LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET` for Linear). Disabled providers don't register; their routes return 404. `ENCRYPTION_KEY` is required in production for token encryption at rest.
 
 ## Per-provider setup guides
 

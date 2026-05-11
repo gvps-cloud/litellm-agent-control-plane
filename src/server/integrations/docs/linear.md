@@ -37,7 +37,7 @@ BASE_URL=https://your-lap-deployment
 
 # 32-byte AES key for token encryption at rest. Required in prod.
 # Generate once: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-INTEGRATION_TOKEN_KEY=<base64-32-bytes>
+ENCRYPTION_KEY=<base64-32-bytes>
 
 LINEAR_CLIENT_ID=<from step 1>
 LINEAR_CLIENT_SECRET=<from step 1>

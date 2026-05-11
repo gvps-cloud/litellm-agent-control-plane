@@ -19,7 +19,7 @@
 
 import { randomBytes } from "node:crypto";
 import { prisma } from "@/server/db";
-import { encryptToken, decryptToken } from "./crypto";
+import { encrypt as encryptToken, decrypt as decryptToken } from "./crypto";
 import type { Integration } from "./types";
 
 const STATE_TTL_MS = 10 * 60_000;

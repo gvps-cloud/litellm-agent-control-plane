@@ -25,6 +25,7 @@ import * as k8s from "@kubernetes/client-node";
 import { fetch } from "undici";
 
 import { env } from "@/server/env";
+import { decrypt } from "@/server/integrations/core/crypto";
 import { renderMemoryBlock, topMemoriesForAgent } from "@/server/memory";
 import {
   TAG_AGENT_ID,
@@ -253,10 +254,19 @@ async function buildContainerEnv(
     SESSION_ID: phaseToken,
     HARNESS_PROGRESS_TOKEN: phaseToken,
   };
-  // Same precedence as fargate.ts buildContainerEnv: passthrough -> per-session
-  // env_vars -> required base. Required keys always win.
+  // Precedence (lowest → highest): passthrough → agent-level env_vars → per-session env_vars → required base.
+  const rawAgentEnvVars =
+    agent.env_vars &&
+    typeof agent.env_vars === "object" &&
+    !Array.isArray(agent.env_vars)
+      ? (agent.env_vars as Record<string, string>)
+      : {};
+  const agentEnvVars = Object.fromEntries(
+    Object.entries(rawAgentEnvVars).map(([k, v]) => [k, decrypt(v)]),
+  );
   const merged: Record<string, string> = {
     ...env.containerEnvPassthrough,
+    ...agentEnvVars,
     ...(env_vars ?? {}),
     ...base,
   };

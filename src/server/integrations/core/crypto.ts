@@ -1,17 +1,17 @@
 /**
- * Symmetric encryption for integration tokens at rest.
+ * Symmetric encryption for secrets at rest.
  *
- * Tokens (OAuth access + refresh) live in the Postgres `integration_install`
- * table. The DB is shared with the rest of LAP, so anyone with read access to
- * the DB would otherwise see plaintext tokens that grant write to the user's
- * Linear / Slack / GitHub workspace. AES-256-GCM with a 32-byte key from the
- * `INTEGRATION_TOKEN_KEY` env var blocks that.
+ * Used for:
+ *   - Integration OAuth tokens in `integration_install`
+ *   - Agent-level env var values in `managed_agent.env_vars`
+ *
+ * AES-256-GCM with a 32-byte key from the `ENCRYPTION_KEY` env var.
  *
  * Format on disk: `enc:v1:<base64(iv | tag | ciphertext)>` where iv is 12
  * bytes, tag is 16 bytes, ciphertext is variable-length.
  *
- * Plaintext fallback: if `INTEGRATION_TOKEN_KEY` is unset and `NODE_ENV !==
- * "production"`, tokens are stored as-is with a one-time warning. This makes
+ * Plaintext fallback: if `ENCRYPTION_KEY` is unset and `NODE_ENV !==
+ * "production"`, values are stored as-is with a one-time warning. This makes
  * local development easy; production deployments must set the key or the
  * encrypt path throws on first use.
  *
@@ -36,7 +36,7 @@ let _cachedKey: Buffer | null | undefined; // undefined = not yet resolved
 
 function getKey(): Buffer | null {
   if (_cachedKey !== undefined) return _cachedKey;
-  const raw = process.env.INTEGRATION_TOKEN_KEY;
+  const raw = process.env.ENCRYPTION_KEY;
   if (!raw) {
     _cachedKey = null;
     return null;
@@ -44,7 +44,7 @@ function getKey(): Buffer | null {
   const buf = Buffer.from(raw, "base64");
   if (buf.length !== 32) {
     throw new Error(
-      "INTEGRATION_TOKEN_KEY must be a base64-encoded 32-byte key. Generate one with: " +
+      "ENCRYPTION_KEY must be a base64-encoded 32-byte key. Generate one with: " +
         `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`,
     );
   }
@@ -56,13 +56,12 @@ function warnOnceAboutPlaintext(): void {
   if (warnedAboutMissingKey) return;
   warnedAboutMissingKey = true;
   console.warn(
-    "[integrations/crypto] INTEGRATION_TOKEN_KEY is not set — integration " +
-      "tokens will be stored as plaintext in the database. This is only " +
-      "acceptable for local development. Set INTEGRATION_TOKEN_KEY in production.",
+    "[crypto] ENCRYPTION_KEY is not set — secrets will be stored as plaintext " +
+      "in the database. Acceptable for local development only. Set ENCRYPTION_KEY in production.",
   );
 }
 
-export function encryptToken(plaintext: string): string {
+export function encrypt(plaintext: string): string {
   const key = getKey();
   if (key === null) {
     const allowPlaintext =
@@ -70,7 +69,7 @@ export function encryptToken(plaintext: string): string {
       process.env.NODE_ENV === "test";
     if (!allowPlaintext) {
       throw new Error(
-        "INTEGRATION_TOKEN_KEY is required outside development/test (NODE_ENV=" +
+        "ENCRYPTION_KEY is required outside development/test (NODE_ENV=" +
           (process.env.NODE_ENV ?? "unset") +
           ")",
       );
@@ -88,7 +87,7 @@ export function encryptToken(plaintext: string): string {
   return PREFIX + Buffer.concat([iv, tag, ciphertext]).toString("base64");
 }
 
-export function decryptToken(stored: string): string {
+export function decrypt(stored: string): string {
   if (!stored.startsWith(PREFIX)) {
     // Legacy plaintext (pre-encryption) or dev-mode-no-key. Pass through.
     return stored;
@@ -96,12 +95,12 @@ export function decryptToken(stored: string): string {
   const key = getKey();
   if (key === null) {
     throw new Error(
-      "INTEGRATION_TOKEN_KEY is required to decrypt a stored encrypted token",
+      "ENCRYPTION_KEY is required to decrypt a stored encrypted value",
     );
   }
   const buf = Buffer.from(stored.slice(PREFIX.length), "base64");
   if (buf.length < IV_LEN + TAG_LEN + 1) {
-    throw new Error("malformed encrypted token");
+    throw new Error("malformed encrypted value");
   }
   const iv = buf.subarray(0, IV_LEN);
   const tag = buf.subarray(IV_LEN, IV_LEN + TAG_LEN);

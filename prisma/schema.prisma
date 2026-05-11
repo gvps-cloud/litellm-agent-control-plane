@@ -24,6 +24,7 @@ model Agent {
   branch              String   @default("main")
   pfp_url             String?
   mcp_servers         Json     @default("[]")
+  env_vars            Json     @default("{}")
   task_definition_arn String
   container_port      Int      @default(4096)
   created_at          DateTime @default(now())
@@ -155,7 +156,7 @@ model Memory {
 
 /// One row per OAuth install (per workspace, per integration). Owns the
 /// access + refresh tokens for talking back to the medium's API. Tokens are
-/// AES-GCM encrypted at rest by core/crypto.ts when INTEGRATION_TOKEN_KEY is
+/// AES-GCM encrypted at rest by core/crypto.ts when ENCRYPTION_KEY is
 /// configured (required in production).
 model IntegrationInstall {
   install_id     String    @id @default(uuid())
