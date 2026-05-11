@@ -429,7 +429,7 @@ export function CallAgentSnippets({ agentId }: CallAgentSnippetsProps) {
             {run.phase === "spawning" ? (
               <div className="mt-2 flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="size-3 animate-spin" aria-hidden />
-                Provisioning Fargate task… first call is the slow one.
+                Provisioning sandbox… first call may take a moment.
               </div>
             ) : null}
             {run.phase === "asking" ? (
