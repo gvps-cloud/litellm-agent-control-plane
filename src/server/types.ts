@@ -54,7 +54,6 @@ export type SessionPhase =
 // ============================================================================
 // Env var validation constants — shared by CreateAgentBody + CreateSessionBody
 // ============================================================================
-
 /**
  * Keys reserved by the harness runtime. Agent-level and per-session `env_vars`
  * cannot override any of these — the route returns 400 if a caller tries.
@@ -400,7 +399,6 @@ export interface ServerEnv {
   PLATFORM_INTERNAL_URL: string;
   CONTAINER_PORT: number; // default 4096
   RECONCILE_INTERVAL_SECONDS: number; // default 60
-
   // Warm pool. WARM_POOL_SIZE = 0 disables the feature entirely; default of
   // 2 keeps two tasks ready for the most-recently-active agent so users
   // get sub-5s session creates out of the box.
@@ -441,6 +439,7 @@ export type AuthIdentity = { user_id: string };
 export interface HarnessCreateSessionOpts {
   sandbox_url: string; // http://<task_ip>:<container_port>
   title?: string;
+  prompt?: string;
   timeout_ms?: number;
 }
 

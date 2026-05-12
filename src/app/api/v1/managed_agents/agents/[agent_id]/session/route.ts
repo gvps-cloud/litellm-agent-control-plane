@@ -263,6 +263,7 @@ async function finishBringUp(
   const harness_session_id = await harnessCreateSession({
     sandbox_url,
     title: body.title,
+    prompt: agent.prompt ?? undefined,
   });
   // Flip status=ready as soon as the harness handshake completes. The
   // sandbox is fully usable at this point — the initial_prompt (if any) is
