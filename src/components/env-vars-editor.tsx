@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import {
   ENV_VARS_MAX_KEYS,
   isSensitiveKey,
+  RESERVED_ENV_KEYS,
   validateEnvVars,
   type EnvVarValidationError,
 } from "@/lib/env-vars";
@@ -55,7 +56,17 @@ function toEditorRows(map: Record<string, string>): EditorRow[] {
 }
 
 export function EnvVarsEditor({ value, onSave, onError }: EnvVarsEditorProps) {
-  const current = useMemo<Record<string, string>>(() => value ?? {}, [value]);
+  // Reserved keys (e.g. AGENT_REQUIREMENTS) are written by the backend but
+  // rejected on PATCH. Filter them out at the boundary so they never leak into
+  // delete-from-read or save-from-edit PATCH bodies. The server preserves them
+  // across PATCHes, so dropping them from the editor's working state is safe.
+  const current = useMemo<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(value ?? {})) {
+      if (!RESERVED_ENV_KEYS.has(k)) out[k] = v;
+    }
+    return out;
+  }, [value]);
   const keys = Object.keys(current);
 
   const [editing, setEditing] = useState(false);
