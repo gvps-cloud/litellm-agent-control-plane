@@ -166,6 +166,16 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Canonical in-cluster URL for a sandbox harness.
+ * The agent-sandbox controller auto-creates a headless Service at
+ * <sandbox-name>.<namespace>.svc.cluster.local; this is the single place
+ * that formula lives so watchdog and spawn path stay in sync.
+ */
+export function inClusterSandboxUrl(task_arn: string, containerPort: number): string {
+  return `http://${task_arn}.${env.K8S_NAMESPACE}.svc.cluster.local:${containerPort}`;
+}
+
+/**
  * Compress a UUID-shaped id into the ≤63-char DNS-1123 label namespace
  * required by Sandbox / Service names. The full id is preserved as a label.
  */
@@ -631,7 +641,7 @@ export async function waitRunningGetUrl(
         lastContainerReason = containerReason;
       }
       if (phase === "Running") {
-        return `http://${task_arn}.${env.K8S_NAMESPACE}.svc.cluster.local:${containerPort}`;
+        return inClusterSandboxUrl(task_arn, containerPort);
       }
       lastReason = `phase=${phase ?? "?"} (in-cluster)`;
       await sleep(POLL_RUNNING_INTERVAL_MS);

@@ -509,9 +509,9 @@ function detectIssues(input: DetectionInput): DetectedIssue[] {
     });
   }
 
-  // service_missing: pod exists but the -np Service does not. Earlier failure mode where
-  // Service create raced with Sandbox delete and left an orphan pod with no route.
-  if (input.pod?.exists && input.service && !input.service.exists) {
+  // service_missing: pod exists but the -np Service does not. Not applicable in-cluster
+  // (NodePort Service is intentionally skipped; routing uses headless DNS instead).
+  if (input.pod?.exists && input.service && !input.service.exists && env.IN_CLUSTER !== "true") {
     issues.push({
       code: "service_missing",
       severity: "high",

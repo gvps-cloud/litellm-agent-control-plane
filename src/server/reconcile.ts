@@ -22,6 +22,7 @@
 import { prisma } from "@/server/db";
 import { harnessCreateSession } from "@/server/harness";
 import {
+  inClusterSandboxUrl,
   listTaggedTasks,
   readNodePort,
   readPodPhase,
@@ -417,11 +418,23 @@ async function recoverStuckCreating(): Promise<void> {
       continue;
     }
 
+    const agent = await prisma.agent.findUnique({
+      where: { agent_id: row.agent_id },
+    });
+    if (!agent) {
+      await markFailed(
+        row.session_id,
+        `watchdog: agent ${row.agent_id} not found`,
+        row.task_arn,
+      );
+      failed++;
+      continue;
+    }
+
     let sandbox_url: string;
     if (env.IN_CLUSTER === "true") {
-      // In-cluster: no NodePort Service created; route via headless DNS.
-      const containerPort = env.CONTAINER_PORT;
-      sandbox_url = `http://${row.task_arn}.${env.K8S_NAMESPACE}.svc.cluster.local:${containerPort}`;
+      const containerPort = agent.container_port ?? env.CONTAINER_PORT;
+      sandbox_url = inClusterSandboxUrl(row.task_arn, containerPort);
     } else {
       const nodePort = await readNodePort(row.task_arn).catch(() => null);
       if (nodePort === null) {
@@ -455,19 +468,6 @@ async function recoverStuckCreating(): Promise<void> {
       } else {
         pending++;
       }
-      continue;
-    }
-
-    const agent = await prisma.agent.findUnique({
-      where: { agent_id: row.agent_id },
-    });
-    if (!agent) {
-      await markFailed(
-        row.session_id,
-        `watchdog: agent ${row.agent_id} not found`,
-        row.task_arn,
-      );
-      failed++;
       continue;
     }
 

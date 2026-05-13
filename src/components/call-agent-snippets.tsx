@@ -38,7 +38,7 @@ function curlSteps(base: string, agentId: string): Step[] {
       code: `curl -X POST ${base}/v1/managed_agents/agents/${agentId}/session \\
   -H "Authorization: Bearer $LITELLM_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"title": "smoke test"}'`,
+  -d '{"title": "smoke test", "initial_prompt": "In one sentence, what is this repo?"}'`,
     },
     {
       title: "2 — Send a message, get the response",
@@ -71,7 +71,7 @@ AGENT_ID = "${agentId}"
 with httpx.Client(timeout=420, headers={"Authorization": f"Bearer {KEY}"}) as c:
     session = c.post(
         f"{BASE}/v1/managed_agents/agents/{AGENT_ID}/session",
-        json={"title": "smoke test"},
+        json={"title": "smoke test", "initial_prompt": "In one sentence, what is this repo?"},
     ).json()
 
 session_id = session["id"]`,
@@ -122,7 +122,7 @@ const session = await fetch(
       Authorization: \`Bearer \${KEY}\`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ title: "smoke test" }),
+    body: JSON.stringify({ title: "smoke test", initial_prompt: "In one sentence, what is this repo?" }),
   },
 ).then((r) => r.json());
 
@@ -232,7 +232,7 @@ interface RunResult {
 
 export function CallAgentSnippets({ agentId }: CallAgentSnippetsProps) {
   const [lang, setLang] = useState<Lang>("curl");
-  const [base, setBase] = useState<string>("http://localhost:4000");
+  const [base, setBase] = useState<string>("");
   const [run, setRun] = useState<RunResult>({
     phase: "idle",
     startedAt: 0,
@@ -242,7 +242,7 @@ export function CallAgentSnippets({ agentId }: CallAgentSnippetsProps) {
   useEffect(() => {
     let cancelled = false;
     void getPublicProxyBase().then((b) => {
-      if (!cancelled && b) setBase(b);
+      if (!cancelled) setBase(b || window.location.origin);
     });
     return () => {
       cancelled = true;
