@@ -42,7 +42,10 @@ spec:
           # Run migrations then start Next.js.
           command: ["/bin/sh", "-c"]
           args:
-            - "npx prisma migrate deploy && node server.js"
+            # Skip prisma migrate deploy — Neon pooler connection uses transaction
+            # mode which doesn't support pg_advisory_lock. Run migrations separately
+            # using the direct (non-pooler) connection URL before deploying.
+            - "node server.js"
 
           ports:
             - containerPort: 10000
