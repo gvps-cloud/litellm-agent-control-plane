@@ -112,4 +112,4 @@ EXPOSE 3000
 # Push schema, then start the standalone Next.js server (server.js is what
 # `output: "standalone"` writes — equivalent to `next start` without the
 # dev/test toolchain).
-CMD ["sh", "-c", "DATABASE_URL=\"${DATABASE_URL}?connection_limit=1&connect_timeout=30\" node node_modules/prisma/build/index.js db push --accept-data-loss --skip-generate && node server.js"]
+CMD ["sh", "-c", "DATABASE_URL=\"${DATABASE_URL}&connection_limit=1&connect_timeout=30\" node node_modules/prisma/build/index.js db push --accept-data-loss --skip-generate && node server.js"]
