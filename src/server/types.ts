@@ -426,6 +426,9 @@ export interface ServerEnv {
   K8S_HARNESS_IMAGE: string;
   K8S_HARNESS_IMAGE_OPENCODE?: string;
   K8S_HARNESS_IMAGE_CLAUDE_SDK?: string;
+  // vault sidecar image — runs alongside every sandbox, holds real secrets,
+  // MITMs egress to swap stubs for real values at the wire.
+  K8S_VAULT_IMAGE: string;
   // Optional override for the kubeconfig cluster server URL. Use when the
   // active kubeconfig points at a host the running process can't reach
   // (e.g. kubeconfig has 127.0.0.1 but the web container needs to dial
