@@ -351,6 +351,12 @@ export default function SessionThreadView() {
         const s = await getSession(sessionId);
         if (cancelled) return;
         setSession(s);
+        // Also refresh messages so the thread catches up if the harness was
+        // still generating when the user navigated away and came back. The
+        // drain guard prevents clobbering an active local stream.
+        if (s.status === "ready" && !drainingRef.current) {
+          await refreshThread();
+        }
       } catch {
         // silent
       }
@@ -360,7 +366,7 @@ export default function SessionThreadView() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [sessionId]);
+  }, [sessionId, refreshThread]);
 
   // First load on a session URL: jump straight to the latest turn so the
   // user lands at the live end of the conversation (matches Slack, iMessage,
@@ -712,9 +718,10 @@ function MainPanel({
   // Slow/misbehaving ready sessions need it as much as stuck/failed ones,
   // so we mount the button on every status.
   const [diagnoseOpen, setDiagnoseOpen] = useState<boolean>(false);
+  const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false);
 
   return (
-    <div className="flex-1 flex flex-col h-full min-h-0 bg-white overflow-hidden">
+    <div className="flex-1 flex flex-col h-full min-h-0 bg-white overflow-hidden relative">
       {/* Header */}
       <div className="h-12 border-b border-gray-200 flex items-center justify-between px-4 flex-shrink-0">
         <div className="flex items-center gap-2 text-[13px] text-gray-600 min-w-0">
@@ -832,7 +839,14 @@ function MainPanel({
           <button className="p-1.5 hover:bg-gray-100 rounded">
             <MoreHorizontal className="w-4 h-4" />
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded">
+          <button
+            type="button"
+            onClick={() => setSessionDrawerOpen((v) => !v)}
+            title="API usage"
+            className={`p-1.5 rounded transition-colors ${
+              sessionDrawerOpen ? "bg-gray-100 text-gray-700" : "hover:bg-gray-100"
+            }`}
+          >
             <PanelRight className="w-4 h-4" />
           </button>
         </div>
@@ -953,6 +967,265 @@ function MainPanel({
         </div>
       </div>
 
+      <SessionDrawer
+        open={sessionDrawerOpen}
+        onClose={() => setSessionDrawerOpen(false)}
+        session={session}
+        agent={agent}
+      />
+    </div>
+  );
+}
+
+// =====================================================================
+// SESSION DRAWER — slides in from the right; API code snippets
+// =====================================================================
+
+const CODE_LANGS = ["curl", "python", "js"] as const;
+type CodeLang = (typeof CODE_LANGS)[number];
+
+function buildCodeSnippets(sessionId: string): Record<
+  "message" | "stream",
+  Record<CodeLang, string>
+> {
+  const sid = sessionId || "SESSION_ID";
+  return {
+    message: {
+      curl: `curl -X POST https://your-host/api/v1/managed_agents/sessions/${sid}/message \\
+  -H "Authorization: Bearer $MASTER_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"text": "your message"}'`,
+      python: `import requests
+
+resp = requests.post(
+    "https://your-host/api/v1/managed_agents"
+    "/sessions/${sid}/message",
+    headers={"Authorization": f"Bearer {MASTER_KEY}"},
+    json={"text": "your message"},
+)
+print(resp.json()["text"])`,
+      js: `const r = await fetch(
+  \`https://your-host/api/v1/managed_agents/sessions/${sid}/message\`,
+  {
+    method: "POST",
+    headers: {
+      "Authorization": \`Bearer \${MASTER_KEY}\`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ text: "your message" }),
+  }
+);
+const { text } = await r.json();`,
+    },
+    stream: {
+      curl: `curl -X POST https://your-host/api/v1/managed_agents/sessions/${sid}/message_stream \\
+  -H "Authorization: Bearer $MASTER_KEY" \\
+  -H "Content-Type: application/json" \\
+  -H "Accept: text/event-stream" \\
+  --no-buffer \\
+  -d '{"text": "your message"}'
+
+# Each SSE frame:
+# data: {"type":"harness_event","event":{"type":"message.part.delta",
+#        "properties":{"partID":"p1","field":"text","delta":"Hello"}}}
+# data: {"type":"done"}`,
+      python: `import httpx, json
+
+with httpx.stream("POST",
+    "https://your-host/api/v1/managed_agents"
+    "/sessions/${sid}/message_stream",
+    headers={
+        "Authorization": f"Bearer {MASTER_KEY}",
+        "Accept": "text/event-stream",
+    },
+    json={"text": "your message"},
+) as r:
+    for line in r.iter_lines():
+        if not line.startswith("data: "): continue
+        frame = json.loads(line[6:])
+        if frame["type"] == "done": break
+        ev = frame.get("event", {})
+        if ev.get("type") == "message.part.delta":
+            print(ev["properties"]["delta"], end="")`,
+      js: `const resp = await fetch(
+  \`https://your-host/api/v1/managed_agents/sessions/${sid}/message_stream\`,
+  {
+    method: "POST",
+    headers: {
+      "Authorization": \`Bearer \${MASTER_KEY}\`,
+      "Accept": "text/event-stream",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ text: "your message" }),
+  }
+);
+const reader = resp.body.getReader();
+const dec = new TextDecoder();
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  for (const line of dec.decode(value).split("\\n")) {
+    if (!line.startsWith("data: ")) continue;
+    const frame = JSON.parse(line.slice(6));
+    if (frame.type === "done") return;
+    const ev = frame.event ?? {};
+    if (ev.type === "message.part.delta")
+      process.stdout.write(ev.properties.delta);
+  }
+}`,
+    },
+  };
+}
+
+interface SessionDrawerProps {
+  open: boolean;
+  onClose: () => void;
+  session: SessionRow | null;
+  agent: AgentRow | null;
+}
+
+function SessionDrawer({ open, onClose, session, agent }: SessionDrawerProps) {
+  const [lang, setLang] = useState<CodeLang>("curl");
+  const [copied, setCopied] = useState<"message" | "stream" | null>(null);
+
+  const sessionId = session?.id ?? "";
+  const snippets = useMemo(() => buildCodeSnippets(sessionId), [sessionId]);
+
+  const handleCopy = useCallback(
+    async (which: "message" | "stream") => {
+      try {
+        await navigator.clipboard.writeText(snippets[which][lang]);
+        setCopied(which);
+        window.setTimeout(() => setCopied(null), 1500);
+      } catch {
+        // ignore
+      }
+    },
+    [snippets, lang],
+  );
+
+  return (
+    <div
+      className={`absolute right-0 top-0 bottom-0 w-[360px] flex flex-col bg-white border-l border-gray-200 z-20 transition-transform duration-250 ease-in-out ${
+        open ? "translate-x-0" : "translate-x-full"
+      }`}
+      style={{ boxShadow: open ? "-4px 0 16px rgba(0,0,0,0.06)" : "none" }}
+    >
+      {/* Header */}
+      <div className="h-12 border-b border-gray-200 flex items-center px-3 gap-2 flex-shrink-0">
+        <span className="flex-1 text-[12px] font-medium text-gray-700">
+          API Usage
+        </span>
+        <span className="font-mono text-[11px] text-gray-400 truncate">
+          {session?.id ? session.id.slice(0, 8) : "—"}
+          {agent?.name ? ` · ${agent.name}` : ""}
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1.5 rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+          aria-label="Close"
+        >
+          <span aria-hidden className="text-[16px] leading-none">×</span>
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="p-4 flex flex-col gap-4">
+          {/* Lang switcher */}
+          <div className="flex gap-1">
+            {CODE_LANGS.map((l) => (
+              <button
+                key={l}
+                type="button"
+                onClick={() => setLang(l)}
+                className={`px-3 py-1 rounded text-[11px] font-mono border transition-colors ${
+                  lang === l
+                    ? "bg-gray-900 text-white border-gray-900"
+                    : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+
+          {/* /message */}
+          <div className="rounded-lg border border-gray-200 overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+              <div>
+                <div className="text-[12px] font-medium text-gray-700">
+                  Send message
+                </div>
+                <div className="font-mono text-[10px] text-gray-400 mt-0.5">
+                  POST /sessions/{"{id}"}/message
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                  POST
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void handleCopy("message")}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  title="Copy"
+                >
+                  {copied === "message" ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              </div>
+            </div>
+            <pre className="font-mono text-[10.5px] leading-relaxed p-3 overflow-x-auto whitespace-pre bg-[#1a1a16] text-[#c9c5bc]">
+              {snippets.message[lang]}
+            </pre>
+          </div>
+
+          {/* /message_stream */}
+          <div className="rounded-lg border border-gray-200 overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+              <div>
+                <div className="text-[12px] font-medium text-gray-700">
+                  Stream message
+                </div>
+                <div className="font-mono text-[10px] text-gray-400 mt-0.5">
+                  POST /sessions/{"{id}"}/message_stream
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
+                  SSE
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void handleCopy("stream")}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  title="Copy"
+                >
+                  {copied === "stream" ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              </div>
+            </div>
+            <pre className="font-mono text-[10.5px] leading-relaxed p-3 overflow-x-auto whitespace-pre bg-[#1a1a16] text-[#c9c5bc]">
+              {snippets.stream[lang]}
+            </pre>
+          </div>
+
+          <p className="text-[11px] text-gray-500 leading-relaxed">
+            Session must be{" "}
+            <span className="font-mono bg-gray-100 px-1 rounded">ready</span>{" "}
+            before sending. Session ID above is pre-filled.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
