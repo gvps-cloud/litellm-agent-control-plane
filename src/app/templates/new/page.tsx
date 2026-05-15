@@ -132,10 +132,19 @@ export default function NewTemplatePage() {
         if (!trimmed || trimmed.startsWith("#")) continue;
         const eq = trimmed.indexOf("=");
         if (eq === -1) continue;
-        const key = trimmed.slice(0, eq).trim();
+        // Strip leading `export ` (bash-style env files)
+        const key = trimmed.slice(0, eq).trim().replace(/^export\s+/, "");
         let val = trimmed.slice(eq + 1).trim();
-        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-          val = val.slice(1, -1);
+        // Quoted value: extract content between first pair of matching quotes
+        if (val.startsWith('"')) {
+          const end = val.indexOf('"', 1);
+          val = end !== -1 ? val.slice(1, end) : val.slice(1);
+        } else if (val.startsWith("'")) {
+          const end = val.indexOf("'", 1);
+          val = end !== -1 ? val.slice(1, end) : val.slice(1);
+        } else {
+          // Unquoted: strip inline comments (must be preceded by whitespace)
+          val = val.replace(/\s+#.*$/, "");
         }
         if (key) pairs.push([key, val]);
       }
