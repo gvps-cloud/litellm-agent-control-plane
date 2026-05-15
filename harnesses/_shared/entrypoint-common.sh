@@ -27,13 +27,23 @@ if [ "${VAULT_ENABLED:-}" = "true" ]; then
     set -a
     . /lap-shared/env
     set +a
-    # CA-bundle env vars (NODE_EXTRA_CA_CERTS, SSL_CERT_FILE, REQUESTS_CA_BUNDLE,
-    # CURL_CA_BUNDLE, GIT_SSL_CAINFO) are set by the platform (k8s.ts:buildContainerEnv)
-    # to /etc/vault-ca/tls.crt so every TLS client trusts the MITM proxy. Don't
-    # override them here — the previous "bake into system store at build time"
-    # design was never wired up (no harness Dockerfile actually COPYs the CA
-    # in), so pointing tools at /etc/ssl/certs/ca-certificates.crt masked the
-    # real fix and silently broke proxied egress for git/curl/python.
+    # Build a combined CA bundle (vault CA + system CAs) so every TLS client
+    # can verify BOTH the vault MITM cert (presented for proxied egress) AND
+    # public certs (presented for direct egress to NO_PROXY hosts like
+    # cluster-internal services). The platform also points the replacement-
+    # bundle env vars (SSL_CERT_FILE, REQUESTS_CA_BUNDLE, CURL_CA_BUNDLE,
+    # GIT_SSL_CAINFO) at /etc/vault-ca/tls.crt for older harness images that
+    # don't run this code path; override them here to the combined bundle so
+    # both verification paths work. NODE_EXTRA_CA_CERTS is supplemental
+    # (appends to Node's built-in Mozilla bundle) and is left at the vault
+    # CA path the platform already set.
+    if [ -r /etc/vault-ca/tls.crt ] && [ -r /etc/ssl/certs/ca-certificates.crt ]; then
+      cat /etc/vault-ca/tls.crt /etc/ssl/certs/ca-certificates.crt > /tmp/lap-ca-bundle.crt
+      export SSL_CERT_FILE=/tmp/lap-ca-bundle.crt
+      export REQUESTS_CA_BUNDLE=/tmp/lap-ca-bundle.crt
+      export CURL_CA_BUNDLE=/tmp/lap-ca-bundle.crt
+      export GIT_SSL_CAINFO=/tmp/lap-ca-bundle.crt
+    fi
     echo "[entrypoint] vault stubs sourced ($(wc -l </lap-shared/env) keys)"
   fi
 fi
