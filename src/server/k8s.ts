@@ -334,9 +334,13 @@ function buildVaultEnv(opts: RunTaskOpts): Array<{ name: string; value: string }
     !Array.isArray(agent.env_vars)
       ? (agent.env_vars as Record<string, string>)
       : {};
-  const out: Array<{ name: string; value: string }> = Object.entries(raw).map(
-    ([k, v]) => ({ name: `REAL_${k}`, value: decrypt(v) }),
-  );
+  // Strip LITELLM_API_KEY from agent env_vars before mapping — we push it
+  // explicitly below as the platform key, so including it from agent.env_vars
+  // would produce two REAL_LITELLM_API_KEY entries with non-deterministic
+  // winner behaviour in the vault container spec.
+  const out: Array<{ name: string; value: string }> = Object.entries(raw)
+    .filter(([k]) => k !== "LITELLM_API_KEY")
+    .map(([k, v]) => ({ name: `REAL_${k}`, value: decrypt(v) }));
   // MASTER_KEY is the shared secret both sides hash to derive the
   // /interceptions auth token. Without it the platform's queries 401.
   out.push({ name: "MASTER_KEY", value: env.MASTER_KEY });
