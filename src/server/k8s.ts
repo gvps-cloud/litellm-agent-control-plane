@@ -855,6 +855,8 @@ export async function waitRunningGetUrl(
  * `sandbox_path`. Expands a leading `~` to `/root`. Creates parent directories
  * as needed. Runs sequentially so failures are attributed to a specific file.
  */
+const EXEC_FILE_TIMEOUT_MS = 30_000;
+
 export async function execFilesIntoContainer(
   task_arn: string,
   files: SandboxFileSpec[],
@@ -867,7 +869,7 @@ export async function execFilesIntoContainer(
     const dest = file.sandbox_path.replace(/^~(?=\/|$)/, "/root");
     const content = Buffer.from(file.content, "base64");
 
-    await new Promise<void>((resolve, reject) => {
+    const execPromise = new Promise<void>((resolve, reject) => {
       const stdin = new PassThrough();
       void execApi
         .exec(
@@ -897,6 +899,15 @@ export async function execFilesIntoContainer(
         })
         .catch(reject);
     });
+
+    const timeoutPromise = new Promise<void>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`sandbox file inject timed out after ${EXEC_FILE_TIMEOUT_MS}ms (${dest})`)),
+        EXEC_FILE_TIMEOUT_MS,
+      ),
+    );
+
+    await Promise.race([execPromise, timeoutPromise]);
   }
 }
 
