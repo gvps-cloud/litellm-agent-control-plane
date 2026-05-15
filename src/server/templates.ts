@@ -50,6 +50,8 @@ interface RawTemplate {
   harness_id: string;
   model: string;
   prompt?: string;
+  /** Path to a Claude Code-format skill .md (relative to agent-templates/<id>/). */
+  skill_file?: string;
   skill_name?: string;
   skill?: string;
   tools?: string[];
@@ -83,10 +85,27 @@ function resolveFiles(id: string, rawFiles: Omit<TemplateFile, "content">[]): {
   return { files, env_vars };
 }
 
+function parseSkillFile(id: string, skillFile: string): { skill_name: string; skill: string } {
+  try {
+    const text = readFileSync(join(FILES_DIR, id, skillFile), "utf8").trim();
+    const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+    if (!m) return { skill_name: "", skill: text };
+    const name = m[1].match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? "";
+    return { skill_name: name, skill: m[2].trim() };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[templates] ${id}/${skillFile}: ${msg}`);
+    return { skill_name: "", skill: "" };
+  }
+}
+
 function fromRaw(raw: RawTemplate): AgentTemplate {
   const { files, env_vars: fileVars } = raw.files?.length
     ? resolveFiles(raw.id, raw.files)
     : { files: [], env_vars: {} };
+  const { skill_name, skill } = raw.skill_file
+    ? parseSkillFile(raw.id, raw.skill_file)
+    : { skill_name: raw.skill_name ?? "", skill: raw.skill ?? "" };
   return {
     id: raw.id,
     name: raw.name,
@@ -96,8 +115,8 @@ function fromRaw(raw: RawTemplate): AgentTemplate {
     harness_id: raw.harness_id,
     model: raw.model,
     prompt: raw.prompt ?? "",
-    skill_name: raw.skill_name ?? "",
-    skill: raw.skill ?? "",
+    skill_name,
+    skill,
     tools: raw.tools ?? [],
     requirements: raw.requirements ?? null,
     env_vars: { ...raw.env_vars, ...fileVars },
