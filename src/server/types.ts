@@ -295,6 +295,11 @@ export interface ApiSession {
   id: string;
   agent_id: string;
   sandbox_url: string | null;
+  // Bearer token for the harness's `/tty` WebSocket. Populated only for TUI
+  // harnesses (claude-code, codex) where the harness pod requires
+  // authentication on the WS upgrade. The browser session view and the
+  // `lap` CLI both append this as `?token=…` when connecting.
+  tty_token: string | null;
   status: SessionStatus | string;
   task_arn: string | null;
   response: HarnessMessageResponse | null;
@@ -670,10 +675,21 @@ export function toApiSession(
   row: SessionRow,
   response: HarnessMessageResponse | null = null,
 ): ApiSession {
+  // tty_token comes from the shared HARNESS_AUTH_TOKEN env var the platform
+  // also propagates into sandbox pods (via CONTAINER_ENV_HARNESS_AUTH_TOKEN
+  // passthrough). Clients connecting to the harness's /tty WS need to send
+  // the same value as ?token=…. Returned unconditionally because the master
+  // key required to read this response already grants admin access; per-
+  // session token minting is a follow-up.
+  const ttyToken =
+    process.env.HARNESS_AUTH_TOKEN?.trim() ||
+    process.env.CONTAINER_ENV_HARNESS_AUTH_TOKEN?.trim() ||
+    null;
   return {
     id: row.session_id,
     agent_id: row.agent_id,
     sandbox_url: row.sandbox_url ?? null,
+    tty_token: ttyToken,
     status: row.status,
     task_arn: row.task_arn ?? null,
     response:
