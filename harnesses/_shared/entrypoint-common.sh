@@ -92,9 +92,11 @@ if [ -n "${REPO_URL:-}" ]; then
     if [ -n "$CLONE_TOKEN" ]; then
       git -c credential.helper= \
           -c "credential.helper=!f() { echo username=x-access-token; echo password=$CLONE_TOKEN; }; f" \
-          clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$REPO_DIR"
+          clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$REPO_DIR" \
+        || echo "[entrypoint] WARNING: git clone failed; continuing without repo" >&2
     else
-      git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$REPO_DIR"
+      git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$REPO_DIR" \
+        || echo "[entrypoint] WARNING: git clone failed; continuing without repo" >&2
     fi
   fi
   # Persistent token: global credential store so gh + git push work from any

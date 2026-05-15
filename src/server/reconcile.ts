@@ -161,7 +161,7 @@ async function sweepWarmOrphans(
 async function sweepStaleWarmTasks(now: number): Promise<number> {
   const warmRows = await prisma.warmTask.findMany({
     where: { status: "warm", task_arn: { not: null } },
-    select: { warm_task_id: true, task_arn: true, ready_at: true },
+    select: { warm_task_id: true, task_arn: true, ready_at: true, created_at: true },
   });
 
   if (warmRows.length === 0) return 0;
@@ -171,10 +171,14 @@ async function sweepStaleWarmTasks(now: number): Promise<number> {
     if (!row.task_arn) continue;
 
     // Grace window: freshly provisioned pods may not yet appear in the API.
-    // Treat unknown age (null ready_at) as within the grace window — same
-    // conservative approach as sweepWarmOrphans / taskAgeMs.
-    const ageMs = row.ready_at ? now - row.ready_at.getTime() : null;
-    if (ageMs === null || ageMs < RECONCILE_NEW_TASK_GRACE_MS) continue;
+    // Prefer ready_at for age; fall back to created_at so rows that were
+    // never marked ready (ready_at = null) are still swept once they are old
+    // enough — previously null ready_at caused them to be skipped forever.
+    const ageMs =
+      row.ready_at
+        ? now - row.ready_at.getTime()
+        : now - row.created_at.getTime();
+    if (ageMs < RECONCILE_NEW_TASK_GRACE_MS) continue;
 
     let phaseInfo: Awaited<ReturnType<typeof readPodPhase>> | undefined;
     try {
