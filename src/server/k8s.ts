@@ -269,7 +269,10 @@ async function buildContainerEnv(
   const base: Record<string, string> = {
     REPO_URL: agent.repo_url ?? env.PREINSTALLED_GITHUB_REPO,
     BRANCH: agent.branch,
-    LITELLM_API_KEY: env.LITELLM_API_KEY,
+    // LITELLM_API_KEY is intentionally omitted here — it is passed to the
+    // vault sidecar as REAL_LITELLM_API_KEY so vault stubs it before the
+    // harness starts. The harness sources /lap-shared/env and receives only
+    // the stub, keeping the real key off the process's visible environment.
     LITELLM_API_BASE: env.LITELLM_API_BASE,
     LITELLM_DEFAULT_MODEL: agent.model,
     AGENT_PROMPT: fullPrompt,
@@ -314,6 +317,11 @@ async function buildContainerEnv(
     NODE_EXTRA_CA_CERTS: "/etc/vault-ca/tls.crt",
     VAULT_ENABLED: "true",
   };
+  // Unconditionally remove LITELLM_API_KEY from the harness env regardless
+  // of precedence. containerEnvPassthrough could reintroduce it via
+  // CONTAINER_ENV_LITELLM_API_KEY, silently defeating the vault-stub guarantee.
+  // The real key is routed through buildVaultEnv as REAL_LITELLM_API_KEY.
+  delete merged["LITELLM_API_KEY"];
   return Object.entries(merged).map(([name, value]) => ({ name, value }));
 }
 
@@ -328,12 +336,24 @@ function buildVaultEnv(opts: RunTaskOpts): Array<{ name: string; value: string }
     !Array.isArray(agent.env_vars)
       ? (agent.env_vars as Record<string, string>)
       : {};
-  const out: Array<{ name: string; value: string }> = Object.entries(raw).map(
-    ([k, v]) => ({ name: `REAL_${k}`, value: decrypt(v) }),
-  );
+  // Strip LITELLM_API_KEY from agent env_vars before mapping — we push it
+  // explicitly below as the platform key, so including it from agent.env_vars
+  // would produce two REAL_LITELLM_API_KEY entries with non-deterministic
+  // winner behaviour in the vault container spec.
+  const out: Array<{ name: string; value: string }> = Object.entries(raw)
+    .filter(([k]) => k !== "LITELLM_API_KEY")
+    .map(([k, v]) => ({ name: `REAL_${k}`, value: decrypt(v) }));
   // MASTER_KEY is the shared secret both sides hash to derive the
   // /interceptions auth token. Without it the platform's queries 401.
   out.push({ name: "MASTER_KEY", value: env.MASTER_KEY });
+
+  // Route LITELLM_API_KEY through vault so the harness only ever sees a stub.
+  // Vault writes LITELLM_API_KEY=stub_xxx to /lap-shared/env; the harness
+  // sources that file before starting, so `ANTHROPIC_API_KEY` (which the
+  // claude-code harness derives from it) is also a stub — the real key never
+  // appears in the process environment. Outbound API calls carry the stub in
+  // Authorization headers; vault swaps it for the real key at the wire.
+  out.push({ name: "REAL_LITELLM_API_KEY", value: env.LITELLM_API_KEY });
 
   // Egress enforcement — vault checks these before proxying each CONNECT.
   const allowOut = Array.isArray(agent.allow_out) ? (agent.allow_out as string[]) : [];
