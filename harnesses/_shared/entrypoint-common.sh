@@ -76,13 +76,13 @@ if [ -n "${REPO_URL:-}" ]; then
       git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$REPO_DIR"
     fi
   fi
-  # Persistent token: store credentials so gh pr create / git push work without
-  # the token landing in argv or .git/config.
+  # Persistent token: global credential store so gh + git push work from any
+  # directory inside the container, not just $REPO_DIR.
   if [ -n "${GITHUB_TOKEN:-}${GH_TOKEN:-}" ] && [ -z "${GIT_TOKEN:-}" ]; then
-    git -C "$REPO_DIR" config credential.helper "store --file=/tmp/.git-credentials"
     PERSIST_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN}}"
     printf 'https://x-access-token:%s@github.com\n' "$PERSIST_TOKEN" > /tmp/.git-credentials
     chmod 600 /tmp/.git-credentials
+    git config --global credential.helper "store --file=/tmp/.git-credentials"
   fi
 fi
 

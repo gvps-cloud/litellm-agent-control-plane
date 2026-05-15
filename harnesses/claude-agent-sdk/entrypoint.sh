@@ -6,4 +6,6 @@ set -euo pipefail
 
 . /opt/lap/common.sh
 
+: "${LITELLM_DEFAULT_MODEL:?LITELLM_DEFAULT_MODEL required}"
+
 exec node /opt/harnesses/claude-agent-sdk/dist/server.js
