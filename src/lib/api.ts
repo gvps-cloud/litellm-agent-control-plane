@@ -429,6 +429,8 @@ export interface CreateAgentRequest {
   env_vars?: Record<string, string>;
   allow_out?: string[];
   deny_out?: string[];
+  /** Library skill IDs to attach at create time (in order). Each is materialized inside the sandbox as ~/.claude/skills/<slug>/SKILL.md on session boot. */
+  skill_ids?: string[];
 }
 
 export interface UpdateAgentRequest {

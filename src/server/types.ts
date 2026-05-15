@@ -103,6 +103,14 @@ export const CreateAgentBody = z.object({
   allow_out: z.array(z.string()).default([]),
   deny_out: z.array(z.string()).default([]),
   /**
+   * Library skills to attach at create time. Each becomes a
+   * `<!-- skill:<id> -->` block appended to `prompt` (via appendSkillBlock)
+   * and is materialized inside the sandbox as `~/.claude/skills/<slug>/SKILL.md`
+   * on session boot. Caller must own every skill_id — unknown or foreign
+   * IDs cause a 404 (same pattern as the single-skill attach route).
+   */
+  skill_ids: z.array(z.string().min(1)).optional(),
+  /**
    * Agent-level env vars persisted to the DB and injected into every
    * session container. Same constraints as CreateSessionBody.env_vars.
    * Use for long-lived secrets like GITHUB_TOKEN or API keys the agent
