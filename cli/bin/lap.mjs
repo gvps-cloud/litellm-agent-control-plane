@@ -212,7 +212,11 @@ async function openAgent(args) {
     wsUrl = TTY_FALLBACK;
     console.log(`  \x1b[2m(sandbox_url is in-cluster — using LAP_TTY_FALLBACK)\x1b[0m`);
   } else {
-    console.error(`  \x1b[31m✗ session.sandbox_url is in-cluster (${session.sandbox_url}) and the platform did not return a tty_url.\x1b[0m`);
+    if (session.sandbox_url) {
+      console.error(`  \x1b[31m✗ session.sandbox_url is in-cluster (${session.sandbox_url}) and the platform did not return a tty_url.\x1b[0m`);
+    } else {
+      console.error(`  \x1b[31m✗ platform returned neither tty_url nor a reachable sandbox_url.\x1b[0m`);
+    }
     console.error(`  \x1b[2m  upgrade the platform, or set LAP_TTY_FALLBACK=ws://host:port/tty in your env\x1b[0m`);
     process.exit(1);
   }
