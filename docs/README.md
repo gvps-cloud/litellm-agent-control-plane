@@ -4,7 +4,7 @@ Setup, operation, and integration guides for the LiteLLM Agent Platform.
 
 ## Watch first
 
-**▶ [Demo: setting up codex and claude-code sandboxes](https://www.youtube.com/watch?v=TODO)** &nbsp;·&nbsp; ~5 min
+**▶ [Demo: setting up codex and claude-code sandboxes](https://www.loom.com/share/a88d525111b1445cb90db342ade09ebc)** &nbsp;·&nbsp; ~5 min
 
 End-to-end walkthrough: create an agent, open a sandbox from the `lap` CLI, attach a local terminal, run codex / claude-code inside.
 
