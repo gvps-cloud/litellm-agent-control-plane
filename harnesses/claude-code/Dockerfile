@@ -9,8 +9,10 @@ FROM node:20-bookworm-slim
 
 # Build deps for node-pty's native binding + runtime deps.
 # curl is required by the phase reporter in entrypoint-common.sh.
+# tmux holds the agent PTY across WS reconnects so `lap --resume` lands on
+# the same in-progress claude session instead of a fresh REPL.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git ca-certificates bash curl python3 make g++ \
+      git ca-certificates bash curl python3 make g++ tmux \
     && rm -rf /var/lib/apt/lists/* \
     && npm install -g @anthropic-ai/claude-code@latest
 
