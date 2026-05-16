@@ -43,6 +43,15 @@ That spins up a fresh Kubernetes pod running Claude Code, attaches your local te
 End-to-end walkthrough: create an agent, open a sandbox from the `lap` CLI, attach a local terminal, run codex / claude-code inside.
 
 
+## Supported harnesses
+
+| Harness | Quickstart |
+|---|---|
+| Claude Code | [docs.litellm-agent-platform.ai/quickstart/claude-code](https://docs.litellm-agent-platform.ai/quickstart/claude-code) |
+| Codex | [docs.litellm-agent-platform.ai/quickstart/codex](https://docs.litellm-agent-platform.ai/quickstart/codex) |
+| Hermes | [docs.litellm-agent-platform.ai/quickstart/hermes](https://docs.litellm-agent-platform.ai/quickstart/hermes) |
+
+
 ## Self-hosting
 
 Sandboxes run on Kubernetes via the [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox) CRD. Local dev uses [kind](https://kind.sigs.k8s.io/).
