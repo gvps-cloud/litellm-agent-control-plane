@@ -110,6 +110,7 @@ jobs:
       opencode_image: ${{ steps.harness-opencode.outputs.image }}
       codex_image: ${{ steps.harness-codex.outputs.image }}
       hermes_image: ${{ steps.harness-hermes.outputs.image }}
+      gemini_image: ${{ steps.harness-gemini.outputs.image }}
 
     steps:
       - name: Checkout
@@ -191,6 +192,14 @@ jobs:
           docker push "$IMG"
           echo "image=$IMG" >> "$GITHUB_OUTPUT"
 
+      - name: Build & push gemini harness
+        id: harness-gemini
+        run: |
+          IMG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/litellm-agent-platform:harness-gemini-${{ github.sha }}"
+          docker buildx build -f harnesses/gemini/Dockerfile -t "$IMG" .
+          docker push "$IMG"
+          echo "image=$IMG" >> "$GITHUB_OUTPUT"
+
   # ── Job 2: Roll out the new image to EKS deployments ──────────────────────
   deploy:
     name: Deploy to EKS
@@ -238,11 +247,13 @@ jobs:
           OC="${REGISTRY}:harness-opencode-${SHA}"
           CX="${REGISTRY}:harness-codex-${SHA}"
           HM="${REGISTRY}:harness-hermes-${SHA}"
+          GM="${REGISTRY}:harness-gemini-${SHA}"
           CC_B64=$(printf '%s' "$CC" | base64 | tr -d '\n')
           SDK_B64=$(printf '%s' "$SDK" | base64 | tr -d '\n')
           OC_B64=$(printf '%s' "$OC" | base64 | tr -d '\n')
           CX_B64=$(printf '%s' "$CX" | base64 | tr -d '\n')
           HM_B64=$(printf '%s' "$HM" | base64 | tr -d '\n')
+          GM_B64=$(printf '%s' "$GM" | base64 | tr -d '\n')
           # JSON Patch `add` both creates and overwrites (RFC 6902 §4.1).
           # `replace` would fail with "object not found" on the first deploy
           # that introduces a new harness key (e.g. CODEX/HERMES) before the
@@ -252,7 +263,8 @@ jobs:
             {\"op\":\"add\",\"path\":\"/data/K8S_HARNESS_IMAGE_CLAUDE_SDK\",\"value\":\"$SDK_B64\"},
             {\"op\":\"add\",\"path\":\"/data/K8S_HARNESS_IMAGE_OPENCODE\",\"value\":\"$OC_B64\"},
             {\"op\":\"add\",\"path\":\"/data/K8S_HARNESS_IMAGE_CODEX\",\"value\":\"$CX_B64\"},
-            {\"op\":\"add\",\"path\":\"/data/K8S_HARNESS_IMAGE_HERMES\",\"value\":\"$HM_B64\"}
+            {\"op\":\"add\",\"path\":\"/data/K8S_HARNESS_IMAGE_HERMES\",\"value\":\"$HM_B64\"},
+            {\"op\":\"add\",\"path\":\"/data/K8S_HARNESS_IMAGE_GEMINI\",\"value\":\"$GM_B64\"}
           ]"
 
       - name: Update web deployment image
