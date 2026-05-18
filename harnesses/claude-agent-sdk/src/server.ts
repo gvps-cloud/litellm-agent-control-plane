@@ -161,24 +161,58 @@ function emptyParts(): PlatformPart[] {
  * response shape. The bus subscribers also see the same events live, which
  * is what powers `/event` SSE for the streaming UI route.
  */
+/**
+ * Anthropic-format image content block. Same shape the Claude API uses on
+ * the wire; the Agent SDK forwards it verbatim when we pass an
+ * AsyncIterable<SDKUserMessage> as `prompt`. `media_type` is the strict
+ * union Anthropic's types require — validated at the wire boundary in
+ * `extractTextAndImages`.
+ */
+type ImageMediaType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+const SUPPORTED_IMAGE_MEDIA_TYPES = new Set<string>([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+interface ImageContentBlock {
+  type: "image";
+  source: {
+    type: "base64";
+    media_type: ImageMediaType;
+    data: string;
+  };
+}
+
 async function runTurn(
   s: Session,
   userText: string,
   modelId: string,
+  images?: ImageContentBlock[],
 ): Promise<PlatformMessage> {
   const startedAt = Date.now();
   const ac = new AbortController();
   s.abortController = ac;
 
   // Emit a `user` message into the bus so the streaming UI can render the
-  // prompt as soon as it lands, before the assistant turn starts.
+  // prompt as soon as it lands, before the assistant turn starts. Images
+  // are surfaced as a single `image_count` part — the UI doesn't render
+  // inline image blocks yet (and the base64 payload would bloat the
+  // history-backed message log), so we record the count for context.
+  const userParts: PlatformPart[] =
+    images && images.length > 0
+      ? [
+          ...(userText ? [{ type: "text", text: userText }] : []),
+          { type: "image_count", count: images.length },
+        ]
+      : [{ type: "text", text: userText }];
   const userMessage: PlatformMessage = {
     info: {
       id: `user_${randomUUID()}`,
       role: "user",
       time: { created: startedAt, completed: startedAt },
     },
-    parts: [{ type: "text", text: userText }],
+    parts: userParts,
   };
   s.history.push(userMessage);
   emit(s, "message.updated", { info: userMessage.info });
@@ -233,7 +267,27 @@ async function runTurn(
   };
 
   try {
-    const stream = query({ prompt: userText, options });
+    // Multimodal prompt: when images are attached we can't use the simple
+    // `prompt: string` form, because string-prompts are wrapped by the SDK
+    // as text-only user content. Switch to the AsyncIterable<SDKUserMessage>
+    // path and build a content array with text + image blocks. Single-turn
+    // generator — the SDK consumes one message then closes.
+    const promptArg =
+      images && images.length > 0
+        ? (async function* () {
+            const content: Array<
+              { type: "text"; text: string } | ImageContentBlock
+            > = [];
+            if (userText) content.push({ type: "text", text: userText });
+            for (const img of images) content.push(img);
+            yield {
+              type: "user" as const,
+              message: { role: "user" as const, content },
+              parent_tool_use_id: null,
+            };
+          })()
+        : userText;
+    const stream = query({ prompt: promptArg, options });
 
     for await (const m of stream as AsyncIterable<SDKMessage>) {
       // Native passthrough. The SDK message is the contract — anything
@@ -536,19 +590,57 @@ app.get("/session/:id/message", async (c) => {
   return c.json(s.history);
 });
 
+/**
+ * Anthropic-format image source as it arrives on the wire. The platform
+ * dispatcher constructs this shape from inbound integration attachments
+ * (e.g. Slack file uploads) — we forward verbatim to the Claude SDK.
+ */
+interface InboundPart {
+  type?: string;
+  text?: string;
+  source?: { type: string; media_type: string; data: string };
+}
+
+function extractTextAndImages(parts: InboundPart[] | undefined): {
+  text: string;
+  images: ImageContentBlock[];
+} {
+  const text = (parts ?? [])
+    .filter((p) => p?.type === "text")
+    .map((p) => p?.text ?? "")
+    .join("\n");
+  const images: ImageContentBlock[] = [];
+  for (const p of parts ?? []) {
+    if (
+      p?.type === "image" &&
+      p.source?.type === "base64" &&
+      typeof p.source.media_type === "string" &&
+      typeof p.source.data === "string" &&
+      SUPPORTED_IMAGE_MEDIA_TYPES.has(p.source.media_type)
+    ) {
+      images.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: p.source.media_type as ImageMediaType,
+          data: p.source.data,
+        },
+      });
+    }
+  }
+  return { text, images };
+}
+
 app.post("/session/:id/message", async (c) => {
   const s = getSession(c.req.param("id"));
   if (!s) return c.json({ error: "not found" }, 404);
   const body = (await c.req.json()) as {
     model?: { providerID: string; modelID: string };
-    parts?: Array<{ type?: string; text?: string }>;
+    parts?: InboundPart[];
   };
-  const text = (body.parts ?? [])
-    .filter((p) => p?.type === "text")
-    .map((p) => p?.text ?? "")
-    .join("\n");
+  const { text, images } = extractTextAndImages(body.parts);
   const modelId = body.model?.modelID ?? DEFAULT_MODEL;
-  const result = await runTurn(s, text, modelId);
+  const result = await runTurn(s, text, modelId, images.length > 0 ? images : undefined);
   return c.json(result);
 });
 
@@ -557,21 +649,20 @@ app.post("/session/:id/prompt_async", async (c) => {
   if (!s) return c.json({ error: "not found" }, 404);
   const body = (await c.req.json()) as {
     model?: { providerID: string; modelID: string };
-    parts?: Array<{ type?: string; text?: string }>;
+    parts?: InboundPart[];
   };
-  const text = (body.parts ?? [])
-    .filter((p) => p?.type === "text")
-    .map((p) => p?.text ?? "")
-    .join("\n");
+  const { text, images } = extractTextAndImages(body.parts);
   const modelId = body.model?.modelID ?? DEFAULT_MODEL;
 
   // Kick off in the background; the streaming /event consumer follows the bus.
   // Errors are emitted on the bus, not thrown to this caller — this endpoint's
   // contract is fire-and-forget per the platform's expectations.
-  void runTurn(s, text, modelId).catch((err: unknown) => {
-    const msg = err instanceof Error ? err.message : String(err);
-    emit(s, "session.error", { message: msg });
-  });
+  void runTurn(s, text, modelId, images.length > 0 ? images : undefined).catch(
+    (err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      emit(s, "session.error", { message: msg });
+    },
+  );
   c.status(204);
   return c.body(null);
 });
