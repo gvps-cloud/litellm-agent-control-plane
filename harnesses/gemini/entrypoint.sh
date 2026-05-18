@@ -65,21 +65,31 @@ if [ -f "$SA_JSON_PATH" ] && grep -q '"private_key"' "$SA_JSON_PATH" 2>/dev/null
   case "${GOOGLE_CLOUD_LOCATION:-}" in
     stub_*|"") export GOOGLE_CLOUD_LOCATION=us-central1 ;;
   esac
-  echo "[entrypoint] vertex auto-config: project=$GOOGLE_CLOUD_PROJECT location=$GOOGLE_CLOUD_LOCATION"
+  # Skip the gemini-cli trust dialog in non-interactive contexts. The pod
+  # itself is the trust boundary; without this the CLI bails with
+  # "not running in a trusted directory". Real value, not vault-stubbed.
+  export GEMINI_CLI_TRUST_WORKSPACE=true
+  echo "[entrypoint] vertex auto-config: project=$GOOGLE_CLOUD_PROJECT location=$GOOGLE_CLOUD_LOCATION trust=true"
 fi
 
+# When GEMINI_SELFTEST_PROMPT is set (any value — vault stubs the content but
+# its presence as a key is what matters), run a non-interactive `gemini -p`
+# with a fixed prompt so the model reply lands in pod stdout. Provable via
+# /api/v1/managed_agents/sessions/<id>/diagnose.pod_logs_tail.
 if [ -n "${GEMINI_SELFTEST_PROMPT:-}" ]; then
-  # GEMINI_SELFTEST_PROMPT itself is stubbed; recover the real value from
-  # /lap-shared/env which holds the unencrypted file vault wrote. Strip
-  # only that key, treat content as the literal prompt.
-  _prompt=$(grep '^GEMINI_SELFTEST_PROMPT=' /lap-shared/env 2>/dev/null | cut -d= -f2-)
-  : "${_prompt:=$GEMINI_SELFTEST_PROMPT}"
+  # Hardcoded prompt: agent.env_var values pass through vault stub-substitution
+  # so the real user-supplied prompt isn't readable inside the container.
+  # For the smoke-test path the prompt content doesn't carry information —
+  # only that the CLI produces *a* model reply. Use a deterministic prompt
+  # so the validator can grep for an exact substring in the reply.
+  _prompt="Reply with exactly four words: hello from gemini cli"
   echo "[selftest] env probe:"
   echo "  GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI:-<unset>}"
   echo "  GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-<unset>}"
   echo "  GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-<unset>}"
   echo "  GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-<unset>}"
-  echo "[selftest] running: gemini -p (prompt: $_prompt)"
+  echo "  GEMINI_CLI_TRUST_WORKSPACE=${GEMINI_CLI_TRUST_WORKSPACE:-<unset>}"
+  echo "[selftest] running: gemini -p \"$_prompt\""
   echo "[selftest-begin]"
   gemini -p "$_prompt" 2>&1 || echo "[selftest] gemini exited non-zero"
   echo "[selftest-end]"
