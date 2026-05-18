@@ -33,6 +33,49 @@ const integration: Integration = {
   oauth: buildOAuthAdapter(),
   webhook: buildWebhookAdapter(),
 
+  manifest(baseUrl) {
+    // Strip any trailing slash so the substituted URLs don't end up with
+    // a double `//` between host and path.
+    const host = baseUrl.replace(/\/+$/, "");
+    return {
+      display_information: {
+        name: "OPENCLAW",
+        description:
+          "Ask a Claude Code agent running on LiteLLM Agent Platform — directly in Slack.",
+        background_color: "#0e0f12",
+      },
+      features: {
+        bot_user: {
+          display_name: "OPENCLAW",
+          always_online: true,
+        },
+      },
+      oauth_config: {
+        redirect_urls: [
+          `${host}/api/integrations/oauth/slack/callback`,
+        ],
+        scopes: {
+          bot: [
+            "app_mentions:read",
+            "chat:write",
+            "im:history",
+            "im:read",
+            "im:write",
+          ],
+        },
+      },
+      settings: {
+        event_subscriptions: {
+          request_url: `${host}/api/integrations/webhooks/slack`,
+          bot_events: ["app_mention", "message.im"],
+        },
+        org_deploy_enabled: false,
+        socket_mode_enabled: false,
+        token_rotation_enabled: false,
+      },
+    };
+  },
+
   async onSessionEvent(ctx) {
     await postActivity(integration, ctx);
   },
