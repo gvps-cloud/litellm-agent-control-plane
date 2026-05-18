@@ -85,22 +85,27 @@ function extractToken(req) {
 
 function isAuthed(req) { return tokenMatches(extractToken(req)); }
 
-// Route Gemini CLI through the LiteLLM gateway so users don't need to
-// configure a separate GEMINI_API_KEY. The CLI speaks the native Gemini API
-// protocol — LiteLLM's `/gemini` passthrough accepts Gemini-shaped requests
-// and forwards to Google with the gateway's upstream credentials.
+// Two auth paths, in priority order:
 //
-//   - GEMINI_API_KEY     ← LITELLM_API_KEY     (vault stub on the wire)
-//   - GOOGLE_GEMINI_BASE_URL ← LITELLM_API_BASE + "/gemini"
+//   1. BYO Gemini key. If the agent provided a GEMINI_API_KEY via env_vars,
+//      the entrypoint sources it (vault-stubbed) before this runs, so
+//      process.env.GEMINI_API_KEY is already set. Route directly to Google
+//      — no LITELLM gateway, no base-URL override. Vault swaps the stub for
+//      the real key on the wire.
 //
-// Without a base-URL override the CLI would hit generativelanguage.googleapis.com
-// directly with a stub key and 401 immediately.
-if (process.env.LITELLM_API_KEY && !process.env.GEMINI_API_KEY) {
+//   2. Fallback: LiteLLM gateway. Use the platform's LITELLM_API_KEY as the
+//      Gemini key and point the CLI at the gateway's `/gemini` passthrough.
+//      Only works when the upstream LiteLLM proxy (a) accepts the key as a
+//      virtual key and (b) has a `gemini/*` model_group configured. Without
+//      a configured Gemini deployment on the proxy the CLI will hang on
+//      every request — the call hits LiteLLM, returns 5xx, the CLI retries.
+const userProvidedGeminiKey = Boolean(process.env.GEMINI_API_KEY);
+if (!userProvidedGeminiKey && process.env.LITELLM_API_KEY) {
   process.env.GEMINI_API_KEY = process.env.LITELLM_API_KEY;
-}
-if (process.env.LITELLM_API_BASE && !process.env.GOOGLE_GEMINI_BASE_URL) {
-  process.env.GOOGLE_GEMINI_BASE_URL =
-    process.env.LITELLM_API_BASE.replace(/\/+$/, "") + "/gemini";
+  if (process.env.LITELLM_API_BASE && !process.env.GOOGLE_GEMINI_BASE_URL) {
+    process.env.GOOGLE_GEMINI_BASE_URL =
+      process.env.LITELLM_API_BASE.replace(/\/+$/, "") + "/gemini";
+  }
 }
 // The CLI's inner Docker/Podman sandbox would try to spawn a nested container
 // for tool calls — pointless inside our k8s pod and likely to fail. Disable
