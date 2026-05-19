@@ -50,6 +50,7 @@ import {
   sendMessageStream,
 } from "@/lib/api";
 import { AgentAvatar } from "@/components/agent-avatar";
+import { SlackLogo } from "@/components/slack-logo";
 import { InspectorPanel } from "@/components/inspector-dialog";
 import { VaultPanel } from "@/components/vault-dialog";
 import {
@@ -1477,11 +1478,22 @@ function OriginBanner({ origin }: { origin: SessionOrigin }) {
       className="flex items-center gap-2 self-start text-[12px] text-muted-foreground hover:text-foreground bg-muted/40 hover:bg-muted border border-border rounded-full px-3 py-1.5 transition-colors"
       title={`Open in ${prettyIntegrationName(origin.integration_id)}`}
     >
-      <MessageSquare className="w-3.5 h-3.5 shrink-0" aria-hidden />
+      <OriginIcon integrationId={origin.integration_id} />
       <span className="truncate max-w-[420px]">{label}</span>
       <ExternalLink className="w-3 h-3 shrink-0 opacity-70" aria-hidden />
     </a>
   );
+}
+
+// Per-integration brand icon. Slack gets its 4-color logo; everything else
+// falls back to a neutral message-bubble glyph from lucide so future
+// integrations (Linear etc.) still show something coherent until their own
+// logo lands here.
+function OriginIcon({ integrationId }: { integrationId: string }) {
+  if (integrationId === "slack") {
+    return <SlackLogo className="w-3.5 h-3.5 shrink-0" />;
+  }
+  return <MessageSquare className="w-3.5 h-3.5 shrink-0" aria-hidden />;
 }
 
 function prettyIntegrationName(id: string): string {
