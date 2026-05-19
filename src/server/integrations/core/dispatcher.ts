@@ -293,7 +293,10 @@ async function spawnSessionForEvent(input: SpawnInput): Promise<void> {
           install,
           externalSessionId: input.external_session_id,
           event: { type: "error", body: `Failed to start session: ${reason}` },
-          agent: { agent_id: input.agent_id } as never,
+          // No binding row was fetched on this path — the spawn failure
+          // happens after we already know the agent_id but before we
+          // refetch the agent row. Providers that need the agent on
+          // error events should guard the optional field.
         })
         .catch(() => {
           /* best-effort */
@@ -371,8 +374,9 @@ async function handleMessage(input: {
   // Fast-path UX: drop a `:eyes:` reaction on the user's message before
   // we do any DB work or session bring-up. Fires fully in parallel — the
   // dispatcher returns 202 in <200ms whether or not Slack's API answers
-  // promptly. The provider's onSessionEvent for "react" no-ops when it
-  // can't anchor (DMs, other mediums) so this is safe across the board.
+  // promptly. `agent` is intentionally omitted because the binding lookup
+  // hasn't happened yet; SessionEventContext.agent is now optional and
+  // the Slack/Linear `react` handlers don't touch it.
   void integration
     .onSessionEvent({
       install,
@@ -382,10 +386,6 @@ async function handleMessage(input: {
         emoji: "eyes",
         anchor: event.original_ts ? { ts: event.original_ts } : undefined,
       },
-      // Agent isn't resolved yet at ack time; the provider's react path
-      // doesn't need it. Cast keeps the type system happy without
-      // adding a stub-agent fetch on the hot path.
-      agent: undefined as never,
     })
     .catch((err) => {
       console.warn(
