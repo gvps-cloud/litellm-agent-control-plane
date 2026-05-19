@@ -161,10 +161,19 @@ async function sweepWarmOrphans(
 async function sweepStaleWarmTasks(now: number): Promise<number> {
   const warmRows = await prisma.warmTask.findMany({
     where: { status: "warm", task_arn: { not: null } },
-    select: { warm_task_id: true, task_arn: true, ready_at: true, created_at: true },
+    select: { warm_task_id: true, task_arn: true, sandbox_url: true, ready_at: true, created_at: true },
   });
 
   if (warmRows.length === 0) return 0;
+
+  // Current expected harness auth token — same value the platform injects into
+  // new pods. Warm pods created before this token existed have HARNESS_AUTH_TOKEN=""
+  // and the harness fails closed (401 on every connection). Detect and evict them.
+  const expectedToken = (
+    process.env.HARNESS_AUTH_TOKEN?.trim() ||
+    process.env.CONTAINER_ENV_HARNESS_AUTH_TOKEN?.trim() ||
+    ""
+  );
 
   let killed = 0;
   for (const row of warmRows) {
@@ -192,17 +201,36 @@ async function sweepStaleWarmTasks(now: number): Promise<number> {
       phaseInfo.phase === "Failed" ||
       phaseInfo.phase === "Succeeded";
 
-    if (!podGone) continue;
+    let reason: string | null = null;
+    if (podGone) {
+      reason = "reconciler: pod gone";
+    } else if (expectedToken && row.sandbox_url && row.ready_at) {
+      // Pod is running but may have been created before HARNESS_AUTH_TOKEN was
+      // set. Probe the harness /session endpoint with the current token — a 401
+      // means the pod's token doesn't match and it can never serve TTY sessions.
+      try {
+        const probeUrl = `${row.sandbox_url.replace(/\/+$/, "")}/session`;
+        const resp = await fetch(probeUrl, {
+          headers: { authorization: `Bearer ${expectedToken}` },
+          signal: AbortSignal.timeout(4_000),
+        });
+        if (resp.status === 401) {
+          reason = "reconciler: harness token mismatch — pod predates HARNESS_AUTH_TOKEN";
+        }
+      } catch {
+        // Network error probing the pod — skip, will retry next tick.
+      }
+    }
+
+    if (!reason) continue;
 
     try {
       const res = await prisma.warmTask.updateMany({
         where: { warm_task_id: row.warm_task_id, status: "warm" },
-        data: { status: "dead", failure_reason: "reconciler: pod gone" },
+        data: { status: "dead", failure_reason: reason },
       });
       if (res.count > 0) {
-        console.warn(
-          `reconcile: warm task ${row.warm_task_id} pod ${row.task_arn} gone — marked dead`,
-        );
+        console.warn(`reconcile: warm task ${row.warm_task_id} ${reason}`);
         killed += 1;
       }
     } catch (e) {
