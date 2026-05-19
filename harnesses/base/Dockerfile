@@ -98,8 +98,11 @@ RUN case "${TARGETARCH}" in \
 
 # ------------------------------------------------------------------ Jaeger
 # All-in-one binary for distributed tracing. Pinned version; arch-aware.
-# Download URL pattern:
-#   jaeger-all-in-one-<version>-linux-<amd64|arm64>.tar.gz
+# Release ships `jaeger-<version>-linux-<arch>.tar.gz` with a sibling
+# `jaeger-<version>-linux-<arch>.sha256sum.txt` containing per-binary
+# checksums (BSD-style: `<hash> *<dir>/<name>`). We verify the
+# jaeger-all-in-one entry before installing — same checksum-sidecar
+# pattern as the `uv` block above.
 ARG JAEGER_VERSION=1.62.0
 
 RUN case "${TARGETARCH}" in \
@@ -114,13 +117,18 @@ RUN case "${TARGETARCH}" in \
         esac \
       ;; \
     esac \
-    && TARBALL="jaeger-all-in-one-${JAEGER_VERSION}-linux-${ARCH}.tar.gz" \
-    && curl -fsSL -o /tmp/jaeger.tar.gz \
+    && cd /tmp \
+    && JAEGER_DIR="jaeger-${JAEGER_VERSION}-linux-${ARCH}" \
+    && TARBALL="${JAEGER_DIR}.tar.gz" \
+    && SIDECAR="${JAEGER_DIR}.sha256sum.txt" \
+    && curl -fsSL -o "${TARBALL}" \
          "https://github.com/jaegertracing/jaeger/releases/download/v${JAEGER_VERSION}/${TARBALL}" \
-    && tar -xzf /tmp/jaeger.tar.gz -C /tmp \
-    && install -m 0755 "/tmp/jaeger-all-in-one-${JAEGER_VERSION}-linux-${ARCH}/jaeger-all-in-one" \
-         /usr/local/bin/jaeger-all-in-one \
-    && rm -rf /tmp/jaeger.tar.gz "/tmp/jaeger-all-in-one-${JAEGER_VERSION}-linux-${ARCH}"
+    && curl -fsSL -o "${SIDECAR}" \
+         "https://github.com/jaegertracing/jaeger/releases/download/v${JAEGER_VERSION}/${SIDECAR}" \
+    && tar -xzf "${TARBALL}" \
+    && grep " \*${JAEGER_DIR}/jaeger-all-in-one$" "${SIDECAR}" | sha256sum -c - \
+    && install -m 0755 "${JAEGER_DIR}/jaeger-all-in-one" /usr/local/bin/jaeger-all-in-one \
+    && rm -rf "${TARBALL}" "${SIDECAR}" "${JAEGER_DIR}"
 
 # ------------------------------------------------------------------ vault CA
 # The vault sidecar MITM-proxies all egress HTTPS to swap credential stubs
