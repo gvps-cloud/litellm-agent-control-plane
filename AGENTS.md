@@ -38,7 +38,7 @@ kubectl patch secret litellm-env -n default --type=json -p="[
 kubectl rollout restart deployment/litellm-web deployment/litellm-worker
 ```
 
-The deploy pipeline (`deploy-eks.yml`) auto-seeds this on first deploy if absent.
+This bootstrap is a one-time manual step per cluster. The deploy pipeline does not auto-seed this secret.
 
 # Harness images
 
