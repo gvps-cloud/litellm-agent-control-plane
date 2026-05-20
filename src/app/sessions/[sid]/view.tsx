@@ -52,8 +52,14 @@ import {
   getSandboxLogs,
   getSession,
   listSessionMessages,
-  sendMessageStream,
 } from "@/lib/api";
+import { browserOpencodeClient } from "@/lib/opencode-client";
+import {
+  applyEvent,
+  initState,
+  type AgentState,
+  type OpencodeEvent,
+} from "@/lib/agent-state";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { SlackLogo } from "@/components/slack-logo";
 import { InspectorPanel } from "@/components/inspector-dialog";
@@ -321,6 +327,11 @@ export default function SessionThreadView() {
     if (session) return session.agent_id;
     return "";
   }, [session, agent]);
+
+  // Browser opencode client for this session — points at the cookie-authed
+  // /api/ui/sessions/:id/opencode shim. Stable per session id; the per-call
+  // path carries the harness/opencode session id.
+  const oc = useMemo(() => browserOpencodeClient(sessionId), [sessionId]);
 
   // Subscribe to the session-wide SSE while the harness is up. The harness
   // streams one `claude_sdk_message` per SDK message; we render those directly
@@ -624,98 +635,78 @@ export default function SessionThreadView() {
 
       const ctl = new AbortController();
       sendAbortRef.current = ctl;
+      // Separate controller for the per-turn /event subscription so we close
+      // it the moment the turn goes idle. The outer ctl (user abort / unmount)
+      // also aborts it.
+      const streamCtl = new AbortController();
+      ctl.signal.addEventListener("abort", () => streamCtl.abort(), {
+        once: true,
+      });
 
       try {
-        // Stream token deltas live. `message.part.delta` carries text or
-        // thinking chunks per partID; we accumulate per-part and render the
-        // result as a list of parts so each block (text, thinking, tool)
-        // renders distinctly. After `done` we refreshThread() to pull
-        // canonical state (tool inputs/outputs that the bus deltas don't
-        // reconstruct on their own).
-        // partsState stores ANY part type the harness produces (text /
-        // thinking / reasoning / tool). The order tracks insertion, which
-        // matches the order parts were first observed on the bus.
-        const partsState: Map<string, HarnessMessagePart> = new Map();
-        const renderStreaming = () => {
-          const partsArray = Array.from(partsState.values());
+        // Drive the turn through the opencode SDK. Subscribe to the pod's
+        // /event bus FIRST (it doesn't replay), then fire the prompt; fold
+        // each frame through the shared reducer and render the in-flight
+        // assistant message into the placeholder. Decoupled send/subscribe is
+        // the opencode contract — the same path Slack uses, so a turn streams
+        // identically wherever it was started.
+        const ocSessionId = session?.harness_session_id;
+        if (!ocSessionId) throw new Error("session has no harness session id");
+
+        const promptParts: Array<
+          | { type: "text"; text: string }
+          | { type: "file"; mime: string; url: string }
+        > = [];
+        if (userText) promptParts.push({ type: "text", text: userText });
+        for (const a of userAttachments ?? []) {
+          // opencode file parts take a data: URL for inline base64 content.
+          promptParts.push({
+            type: "file",
+            mime: a.mime_type,
+            url: `data:${a.mime_type};base64,${a.base64}`,
+          });
+        }
+
+        const renderState = (st: AgentState) => {
+          // A turn's content accrues on the latest assistant message; render
+          // its parts (text / thinking / tool) into the placeholder.
+          const assistant = [...st.messages]
+            .reverse()
+            .find((m) => m.role === "assistant");
+          const parts = (assistant?.parts ?? []) as unknown as HarnessMessagePart[];
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
-                ? { ...m, text: undefined, parts: partsArray, status: "in_progress" }
+                ? { ...m, text: undefined, parts, status: "in_progress" }
                 : m,
             ),
           );
         };
-        const ingestDelta = (
-          partID: string,
-          delta: string,
-          field: "text" | "thinking",
-        ) => {
-          const cur = (partsState.get(partID) ?? {
-            id: partID,
-            type: field,
-            text: "",
-          }) as HarnessMessagePart;
-          (cur as { text?: string }).text =
-            ((cur as { text?: string }).text || "") + delta;
-          // If a partID flips field mid-stream, trust the latest field type.
-          (cur as { type?: string }).type = field;
-          partsState.set(partID, cur);
-        };
-        await sendMessageStream(
-          sessionId,
-          {
-            text: userText,
-            ...(userAttachments && userAttachments.length > 0
-              ? { attachments: userAttachments }
+
+        const events = await oc.event.subscribe({ signal: streamCtl.signal });
+        // throwOnError so a rejected send (bad model, dead pod) surfaces in
+        // the catch below instead of hanging the event loop forever.
+        await oc.session.promptAsync({
+          path: { id: ocSessionId },
+          body: {
+            ...(currentModel
+              ? { model: { providerID: "litellm", modelID: currentModel } }
               : {}),
+            parts: promptParts,
           },
-          (frame) => {
-            if (frame.type !== "harness_event" || !frame.event) return;
-            const ev = frame.event;
-            const props = ev.properties ?? {};
-            if (ev.type === "message.part.delta") {
-              const partID = props.partID as string | undefined;
-              const delta = props.delta as string | undefined;
-              const field = props.field as string | undefined;
-              if (!partID || !delta) return;
-              if (field !== "text" && field !== "thinking") return;
-              ingestDelta(partID, delta, field);
-              renderStreaming();
-            } else if (ev.type === "message.part.updated") {
-              // Authoritative replacement. The harness sends the FULL part
-              // object — text deltas resolved, tool inputs/outputs filled.
-              // Store it verbatim so tool blocks render in the streaming
-              // view too (not just after refreshThread).
-              const part = props.part as HarnessMessagePart | undefined;
-              const rawId = part
-                ? (part as Record<string, unknown>).id
-                : undefined;
-              if (part && typeof rawId === "string") {
-                // Guard: if this is a thinking part with empty text, preserve
-                // whatever text the delta stream already accumulated. The SDK
-                // sometimes delivers block.thinking="" in the final assistant
-                // event when streaming thinking_delta events were also sent;
-                // the harness falls back to thinkingAccum but that lookup can
-                // miss if sdkMsgId didn't match. Keep the delta-built text so
-                // the thinking block stays visible.
-                if (
-                  (part as { type?: string }).type === "thinking" &&
-                  !(part as { text?: string }).text
-                ) {
-                  const existing = partsState.get(rawId);
-                  const existingText = (existing as { text?: string } | undefined)?.text;
-                  if (existingText) {
-                    (part as { text?: string }).text = existingText;
-                  }
-                }
-                partsState.set(rawId, part);
-                renderStreaming();
-              }
-            }
-          },
-          { signal: ctl.signal },
-        );
+          signal: ctl.signal,
+          throwOnError: true,
+        });
+
+        let streamState = initState();
+        for await (const ev of events.stream) {
+          const e = ev as unknown as OpencodeEvent;
+          const sid = e.properties?.sessionID;
+          if (typeof sid === "string" && sid !== ocSessionId) continue;
+          streamState = applyEvent(streamState, e);
+          renderState(streamState);
+          if (e.type === "session.idle" || e.type === "session.error") break;
+        }
         await refreshThread();
         const elapsedMs = Math.round(performance.now() - sendStartMs);
         // Stamp the freshly-arrived assistant message (the last one in the
@@ -743,11 +734,20 @@ export default function SessionThreadView() {
           ),
         );
       } finally {
+        streamCtl.abort();
         sendAbortRef.current = null;
         drainingRef.current = false;
       }
     })();
-  }, [messages, sessionId, session?.status, refreshThread]);
+  }, [
+    messages,
+    sessionId,
+    session?.status,
+    session?.harness_session_id,
+    currentModel,
+    oc,
+    refreshThread,
+  ]);
 
   // Abort any in-flight stream when the route unmounts so the underlying
   // fetch and the upstream SSE subscription both tear down cleanly.
