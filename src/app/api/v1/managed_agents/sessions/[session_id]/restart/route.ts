@@ -184,7 +184,7 @@ export async function POST(req: Request, ctx: RouteContext) {
         status: "ready",
       });
 
-      return Response.json(toApiSession(updated, response));
+      return Response.json(toApiSession(updated, response, null, agent.harness_id));
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e);
       // Mark failed before attempting cleanup so the row reflects the error

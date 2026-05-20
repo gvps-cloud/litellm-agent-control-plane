@@ -439,6 +439,10 @@ export interface ApiSession {
   // authentication on the WS upgrade. The browser session view and the
   // `lap` CLI both append this as `?token=…` when connecting.
   tty_token: string | null;
+  // True when the agent's harness exposes a PTY over `/tty` (claude-code,
+  // codex, hermes, gemini). False for JSON-API harnesses (claude-agent-sdk,
+  // opencode) — the `lap` CLI switches to REPL mode for those.
+  supports_tui: boolean;
   status: SessionStatus | string;
   task_arn: string | null;
   response: HarnessMessageResponse | null;
@@ -900,6 +904,7 @@ export function toApiSession(
   row: SessionRow,
   response: HarnessMessageResponse | null = null,
   origin: SessionOrigin | null = null,
+  harness_id?: string,
 ): ApiSession {
   // tty_token comes from the shared HARNESS_AUTH_TOKEN env var the platform
   // also propagates into sandbox pods (via CONTAINER_ENV_HARNESS_AUTH_TOKEN
@@ -912,6 +917,11 @@ export function toApiSession(
     process.env.CONTAINER_ENV_HARNESS_AUTH_TOKEN?.trim() ||
     null;
 
+  // When harness_id is known, check TUI support precisely. When unknown
+  // (callers that haven't been updated yet), assume TUI-compatible so
+  // existing behaviour is preserved for those code paths.
+  const supportsTui = harness_id !== undefined ? harnessSupportsTui(harness_id) : true;
+
   // tty_url: browser-accessible WS base URL for TUI harnesses.
   // IN_CLUSTER: sandbox_url is cluster-internal (*.svc.cluster.local) and
   // unreachable from the browser. Return a relative path that the platform's
@@ -919,6 +929,7 @@ export function toApiSession(
   // Not IN_CLUSTER (local dev): sandbox_url is a NodePort address the browser
   // can reach directly; return null so the session view derives it client-side.
   const ttyUrl: string | null = (() => {
+    if (!supportsTui) return null;
     if (!row.sandbox_url || row.status !== "ready") return null;
     if (process.env.IN_CLUSTER === "true") {
       return `/api/v1/managed_agents/sessions/${row.session_id}/tty`;
@@ -932,6 +943,7 @@ export function toApiSession(
     sandbox_url: row.sandbox_url ?? null,
     tty_url: ttyUrl,
     tty_token: ttyToken,
+    supports_tui: supportsTui,
     status: row.status,
     task_arn: row.task_arn ?? null,
     response:

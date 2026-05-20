@@ -36,6 +36,7 @@ export async function GET(req: Request, ctx: RouteContext) {
     const row = await prisma.session.findUnique({
       where: { session_id },
       include: {
+        agent: { select: { harness_id: true } },
         integration_session: {
           include: { binding: { include: { install: true } } },
         },
@@ -51,7 +52,7 @@ export async function GET(req: Request, ctx: RouteContext) {
           install: ext.binding.install,
         })
       : null;
-    return Response.json(toApiSession(row, null, origin));
+    return Response.json(toApiSession(row, null, origin, row.agent.harness_id));
   } catch (e) {
     if (e instanceof Response) return e;
     if (e instanceof HttpError)

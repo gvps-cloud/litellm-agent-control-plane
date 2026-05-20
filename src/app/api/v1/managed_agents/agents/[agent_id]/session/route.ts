@@ -517,5 +517,5 @@ export const POST = wrap<RouteContext>(async (req, ctx) => {
 
   // Return the `creating` row immediately. The UI polls /sessions/{id} and
   // flips to the ready/failed view when the background bring-up settles.
-  return Response.json(toApiSession(session, null));
+  return Response.json(toApiSession(session, null, null, agent.harness_id));
 });

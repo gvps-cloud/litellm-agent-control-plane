@@ -309,6 +309,9 @@ async function openAgent(args) {
 
   // Resolve agent: accept either a UUID or a name.
   let agentId;
+  // Null = unknown (UUID path, no agent object fetched); we'll fall back to
+  // session.supports_tui after polling. True/false = known from the agent list.
+  let agentSupportsTui = null;
   if (/^[0-9a-f-]{36}$/i.test(wanted)) {
     agentId = wanted;
   } else {
@@ -326,6 +329,7 @@ async function openAgent(args) {
         process.exit(1);
       }
       agentId = hit.id;
+      agentSupportsTui = isTuiAgent(hit);
       console.log(`\r  \x1b[32m✓\x1b[0m agent \x1b[36m${hit.name}\x1b[0m \x1b[2m(${agentId.slice(0,8)}, harness=${hit.harness_id})\x1b[0m`);
     } catch (e) {
       console.error(`\n  \x1b[31m✗ agent lookup failed: ${e.message}\x1b[0m`);
@@ -419,6 +423,16 @@ async function openAgent(args) {
   }
   process.stdout.write(` ${ansi.cyan("ready")}\n`);
 
+  // Determine interaction mode. agentSupportsTui is known when we resolved by
+  // name (agent list fetch). For UUID path it's null; fall back to the
+  // session.supports_tui field the updated platform now returns.
+  const tuiMode = agentSupportsTui ?? session.supports_tui ?? true;
+
+  if (!tuiMode) {
+    await attachRepl(cfg, sid);
+    return;
+  }
+
   // Prefer session.tty_url when the platform provides it — that's a
   // platform-served route (e.g. /api/v1/managed_agents/sessions/<id>/tty
   // proxied by server-proxy.mjs) that's reachable over the same public
@@ -499,12 +513,94 @@ async function resumeSession(arg) {
   }
   console.log(ansi.cyan("ready"));
 
+  // session.supports_tui is present on updated platforms; for older platforms
+  // that don't return it, fall back to tty_url presence as a proxy.
+  const tuiMode = typeof session.supports_tui === "boolean"
+    ? session.supports_tui
+    : !!session.tty_url;
+
+  if (!tuiMode) {
+    await attachRepl(cfg, sid);
+    return;
+  }
+
   const wsUrl = deriveTtyUrl(cfg, session);
   if (!wsUrl) process.exit(1);
   const ttyToken = session.tty_token || process.env.LAP_TTY_TOKEN || "";
   console.log(`  ${ansi.dim(`→ attaching local TTY to ${wsUrl}`)}`);
   console.log(`  ${ansi.dim("(press Ctrl-D to detach)")}\n`);
   await attachPty(cfg, sid, wsUrl, ttyToken);
+}
+
+// Extract a plain-text string from a HarnessMessageResponse (parts array).
+function extractReplText(data) {
+  const parts = Array.isArray(data?.parts) ? data.parts : [];
+  const texts = parts
+    .filter(p => p?.type === "text" && typeof p.text === "string")
+    .map(p => p.text);
+  if (texts.length > 0) return texts.join("\n");
+  if (typeof data?.text === "string") return data.text;
+  return JSON.stringify(data, null, 2);
+}
+
+// REPL mode for JSON-API harnesses (claude-agent-sdk, opencode).
+// Sends lines via POST /sessions/:id/message and prints the response.
+function attachRepl(cfg, sid) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      prompt: ansi.cyan("  > "),
+    });
+
+    console.log(`  ${ansi.dim("Chat mode — Ctrl-D to exit")}\n`);
+    rl.prompt();
+
+    let busy = false;
+    rl.on("line", (line) => {
+      const text = line.trim();
+      if (!text) { rl.prompt(); return; }
+      if (busy) return; // drop input while request is in-flight
+      busy = true;
+      (async () => {
+        process.stdout.write(`  ${ansi.dim("…")}\r`);
+        try {
+          const r = await fetch(`${cfg.base}/api/v1/managed_agents/sessions/${sid}/message`, {
+            method: "POST",
+            headers: {
+              "authorization": `Bearer ${cfg.key}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({ text }),
+          });
+          readline.clearLine(process.stdout, 0);
+          readline.cursorTo(process.stdout, 0);
+          if (!r.ok) {
+            const body = await r.text().catch(() => "");
+            console.error(`  ${ansi.red(`✗ ${r.status} ${r.statusText} ${body.slice(0, 120)}`)}`);
+          } else {
+            const data = await r.json().catch(() => null);
+            console.log("\n" + extractReplText(data) + "\n");
+          }
+        } catch (e) {
+          readline.clearLine(process.stdout, 0);
+          readline.cursorTo(process.stdout, 0);
+          console.error(`  ${ansi.red(`✗ ${e.message}`)}`);
+        }
+        busy = false;
+        rl.prompt();
+      })();
+    });
+
+    rl.on("close", async () => {
+      // Wait for any in-flight request to finish so piped / scripted
+      // usage sees the response before the process exits.
+      while (busy) await new Promise(r => setTimeout(r, 50));
+      console.log(`\n  ${ansi.dim("[chat ended]")}`);
+      resolve();
+      process.exit(0);
+    });
+  });
 }
 
 function attachPty(cfg, sid, wsUrl, ttyToken) {
