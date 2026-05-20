@@ -629,6 +629,11 @@ export interface ServerEnv {
    */
   PLATFORM_INTERNAL_URL: string;
   LOCAL_SANDBOX_URL: string | undefined;
+  // Shared secret the platform injects into executor pod env and validates
+  // on every /execute call. Optional so local dev without K8s still works
+  // (omitting the var skips the check on both sides); production Sandbox CRs
+  // should always set this via the litellm-env secret.
+  EXECUTOR_SECRET?: string;
   CONTAINER_PORT: number; // default 4096
   RECONCILE_INTERVAL_SECONDS: number; // default 60
   // Warm pool. WARM_POOL_SIZE = 0 disables the feature entirely; default of
@@ -973,6 +978,7 @@ export const TAG_AGENT_ID = "litellm_agent_id";
 export const TAG_WARM_TASK_ID = "litellm_warm_task_id";
 export const HARNESS_OPENCODE = "opencode";
 export const HARNESS_CLAUDE_SDK = "claude-agent-sdk";
+export const HARNESS_BRAIN_INLINE = "claude-code-brain-inline";
 // TUI harnesses — pod exposes /tty (WebSocket) instead of the JSON message API.
 // The session view attaches xterm.js directly.
 export const HARNESS_CLAUDE_CODE = "claude-code";
@@ -993,6 +999,7 @@ export function harnessSupportsTui(harness_id: string): boolean {
 export const KNOWN_HARNESSES: ReadonlySet<string> = new Set([
   HARNESS_OPENCODE,
   HARNESS_CLAUDE_SDK,
+  HARNESS_BRAIN_INLINE,
   HARNESS_CLAUDE_CODE,
   HARNESS_CODEX,
   HARNESS_HERMES,
