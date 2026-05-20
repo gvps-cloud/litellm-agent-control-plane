@@ -702,6 +702,18 @@ export function restartSession(
   );
 }
 
+export function abortSession(
+  id: string,
+  init?: ApiInit,
+): Promise<{ ok: boolean }> {
+  return api<{ ok: boolean }>(
+    "POST",
+    `/v1/managed_agents/sessions/${encodeURIComponent(id)}/abort`,
+    undefined,
+    init,
+  );
+}
+
 // ---------- Session diagnose (one-shot debug bundle) ----------
 
 /**

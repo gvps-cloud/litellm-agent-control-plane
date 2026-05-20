@@ -31,6 +31,8 @@ import {
   MessageSquare,
   ExternalLink,
   Paperclip,
+  Square,
+  X,
 } from "lucide-react";
 import {
   ApiError,
@@ -43,6 +45,7 @@ import {
   SessionOrigin,
   SessionRow,
   api,
+  abortSession,
   deleteSession,
   getAgent,
   getDiagnose,
@@ -737,6 +740,29 @@ export default function SessionThreadView() {
     [handleSend],
   );
 
+  const handleAbort = useCallback(() => {
+    // Cancel the in-flight client fetch immediately so the stream tears down.
+    sendAbortRef.current?.abort();
+    // Signal the harness to abort the SDK turn — fire-and-forget.
+    if (sessionId) {
+      abortSession(sessionId).catch((e) =>
+        console.warn("abort signal failed:", e),
+      );
+    }
+  }, [sessionId]);
+
+  const handleCancelQueued = useCallback((msgId: string) => {
+    setMessages((prev) => {
+      const idx = prev.findIndex((m) => m.id === msgId);
+      if (idx === -1) return prev;
+      // Remove the queued assistant row and its preceding local user message.
+      const userIdx = idx > 0 && prev[idx - 1].role === "user" && prev[idx - 1].id.startsWith("local-")
+        ? idx - 1
+        : -1;
+      return prev.filter((_, i) => i !== idx && i !== userIdx);
+    });
+  }, []);
+
   const [inspectorOpen, setInspectorOpen] = useState(false);
   // Vault is a sibling top-level toggle to Inspect. We keep the two open
   // states independent so they can be shown together (each renders as a
@@ -768,6 +794,8 @@ export default function SessionThreadView() {
         setAttachments={setAttachments}
         handleSend={handleSend}
         handleKeyDown={handleKeyDown}
+        handleAbort={handleAbort}
+        handleCancelQueued={handleCancelQueued}
         messagesEndRef={messagesEndRef}
         scrollContainerRef={scrollContainerRef}
         restarting={restarting}
@@ -814,6 +842,8 @@ interface MainPanelProps {
   setAttachments: React.Dispatch<React.SetStateAction<SendMessageAttachment[]>>;
   handleSend: () => void;
   handleKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  handleAbort: () => void;
+  handleCancelQueued: (msgId: string) => void;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
   restarting: boolean;
@@ -842,6 +872,8 @@ function MainPanel({
   setAttachments,
   handleSend,
   handleKeyDown,
+  handleAbort,
+  handleCancelQueued,
   messagesEndRef,
   scrollContainerRef,
   restarting,
@@ -1145,6 +1177,7 @@ function MainPanel({
                 m.role === "user" &&
                 messages.slice(0, i).every((x) => x.role !== "user")
               }
+              onCancelQueued={handleCancelQueued}
             />
           ))}
 
@@ -1191,6 +1224,7 @@ function MainPanel({
             disabled={!isReady}
             handleSend={handleSend}
             handleKeyDown={handleKeyDown}
+            onAbort={handleAbort}
           />
         </div>
       </div>
@@ -1492,9 +1526,11 @@ function SessionDrawer({ open, onClose, session, agent }: SessionDrawerProps) {
 function MessageBlock({
   msg,
   isFirstUser,
+  onCancelQueued,
 }: {
   msg: LocalMessage;
   isFirstUser: boolean;
+  onCancelQueued?: (msgId: string) => void;
 }) {
   if (msg.role === "user") {
     return (
@@ -1505,7 +1541,7 @@ function MessageBlock({
       />
     );
   }
-  return <AssistantBlock msg={msg} />;
+  return <AssistantBlock msg={msg} onCancelQueued={onCancelQueued} />;
 }
 
 // Compact banner above the first message when a session was created from an
@@ -1628,7 +1664,13 @@ function AttachmentImage({
   );
 }
 
-function AssistantBlock({ msg }: { msg: LocalMessage }) {
+function AssistantBlock({
+  msg,
+  onCancelQueued,
+}: {
+  msg: LocalMessage;
+  onCancelQueued?: (msgId: string) => void;
+}) {
   const failed = msg.status === "failed";
   const inProgress = msg.status === "in_progress";
   const queued = msg.status === "queued";
@@ -1668,6 +1710,17 @@ function AssistantBlock({ msg }: { msg: LocalMessage }) {
         <div className="flex items-center gap-2 text-[13px] text-muted-foreground leading-relaxed">
           <span aria-hidden className="size-1.5 rounded-full bg-muted-foreground/40" />
           queued — will send when current finishes
+          {onCancelQueued && (
+            <button
+              type="button"
+              onClick={() => onCancelQueued(msg.id)}
+              title="Cancel queued message"
+              className="ml-1 p-0.5 rounded hover:bg-muted hover:text-foreground transition-colors"
+              aria-label="Cancel queued message"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
         </div>
       ) : inProgress && visibleParts.length === 0 ? (
         // Streamed deltas land on `msg.text` (parts only get populated after
@@ -2005,6 +2058,7 @@ interface ComposerProps {
   disabled: boolean;
   handleSend: () => void;
   handleKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onAbort?: () => void;
 }
 
 // Convert a clipboard / file blob into the SendMessageAttachment wire shape:
@@ -2049,6 +2103,7 @@ function Composer({
   disabled,
   handleSend,
   handleKeyDown,
+  onAbort,
 }: ComposerProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -2206,20 +2261,28 @@ function Composer({
           >
             <Paperclip className="w-3.5 h-3.5" />
           </button>
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={!canSend}
-            className="bg-foreground text-background p-1.5 rounded-full hover:bg-foreground/90 transition-colors disabled:opacity-30 disabled:hover:bg-foreground"
-            aria-label={hasInProgress ? "Queue follow-up" : "Send"}
-            title={
-              hasInProgress
-                ? "Queue follow-up — sends when the current message finishes"
-                : "Send (Enter)"
-            }
-          >
-            <ArrowUp className="w-3.5 h-3.5" />
-          </button>
+          {hasInProgress && onAbort ? (
+            <button
+              type="button"
+              onClick={onAbort}
+              className="bg-foreground text-background p-1.5 rounded-full hover:bg-foreground/90 transition-colors"
+              aria-label="Stop current turn"
+              title="Stop — interrupt the running agent turn"
+            >
+              <Square className="w-3.5 h-3.5 fill-background" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={!canSend}
+              className="bg-foreground text-background p-1.5 rounded-full hover:bg-foreground/90 transition-colors disabled:opacity-30 disabled:hover:bg-foreground"
+              aria-label="Send"
+              title="Send (Enter)"
+            >
+              <ArrowUp className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
     </div>

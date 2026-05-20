@@ -271,6 +271,24 @@ export async function harnessPromptAsync(
  * canceling via the signal when done — without that, the stream stays open
  * (10s heartbeats keep undici from idling it shut).
  */
+export async function harnessAbort(opts: {
+  sandbox_url: string;
+  harness_session_id: string;
+}): Promise<void> {
+  const { sandbox_url, harness_session_id } = opts;
+  const url = `${sandbox_url}/session/${harness_session_id}/abort`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new HarnessHttpError(res.status, res.statusText, text, url, "POST");
+  }
+}
+
 export async function harnessOpenEventStream(opts: {
   sandbox_url: string;
   signal?: AbortSignal;
