@@ -158,11 +158,22 @@ export function buildWebhookAdapter(): WebhookAdapter {
       if (!channel || !teamId) return { kind: "ignore" };
 
       const text = stripMentions(e.text);
-      // Pull image bytes from Slack before handing the event to the
-      // dispatcher — the agent's sandbox can't authenticate against Slack's
-      // private file URLs, so the download has to happen here while we still
-      // hold the bot token.
-      const attachments = await fetchAttachments(e.files, install);
+
+      // Two independent Slack round trips — fetch them together so the webhook
+      // only pays for one. `fetchAttachments` pulls image bytes (the agent's
+      // sandbox can't authenticate against Slack's private file URLs).
+      // `fetchThreadHistory` backfills the earlier messages when the mention
+      // lands inside an existing thread, so the agent sees the context a human
+      // reading the thread would. A top-level mention starts a fresh thread
+      // (thread_ts === ts) and has nothing prior to fetch.
+      const threadTs =
+        e.thread_ts && e.thread_ts !== e.ts ? e.thread_ts : null;
+      const [attachments, threadContext] = await Promise.all([
+        fetchAttachments(e.files, install),
+        threadTs
+          ? fetchThreadHistory(channel, threadTs, install, e.ts)
+          : Promise.resolve(null),
+      ]);
 
       // Ignore the event only when there's NEITHER text NOR attachments
       // (e.g. an empty @mention or a join notification). An image with no
@@ -177,17 +188,6 @@ export function buildWebhookAdapter(): WebhookAdapter {
         e.ts,
       );
 
-      // When the mention lands inside an existing thread, Slack only sends us
-      // the mention itself — backfill the earlier messages so the agent sees
-      // the context a human reading the thread would. A top-level mention
-      // starts a fresh thread (thread_ts === ts) and has nothing prior.
-      let threadContext: string | undefined;
-      if (e.thread_ts && e.thread_ts !== e.ts) {
-        threadContext =
-          (await fetchThreadHistory(channel, e.thread_ts, install, e.ts)) ??
-          undefined;
-      }
-
       return {
         kind: "message",
         external_session_id: externalSessionId,
@@ -197,7 +197,7 @@ export function buildWebhookAdapter(): WebhookAdapter {
         // immediate `:eyes:` reaction on the user's actual message rather
         // than the thread root.
         original_ts: e.ts,
-        thread_context: threadContext,
+        thread_context: threadContext ?? undefined,
       };
     },
   };
