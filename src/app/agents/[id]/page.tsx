@@ -28,6 +28,7 @@ import {
   getSkill,
   listSessions,
   spawnSession,
+  syncAgentTemplate,
   updateAgent,
 } from "@/lib/api";
 
@@ -85,6 +86,9 @@ export default function AgentDetailPage({ params }: PageProps) {
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteInProgress, setDeleteInProgress] = useState(false);
+
+  const [syncing, setSyncing] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -157,6 +161,80 @@ export default function AgentDetailPage({ params }: PageProps) {
     }
   }
 
+  const handleEnvVarsSave = useCallback(
+    async (next: Record<string, string>) => {
+      if (!agent) return;
+      setError(null);
+      const updated = await updateAgent(agent.id, { env_vars: next });
+      setAgent(updated);
+    },
+    [agent],
+  );
+
+  async function handleTemplateSync() {
+    if (!agent || syncing) return;
+    setSyncing(true);
+    try {
+      await syncAgentTemplate(id);
+      const updated = await getAgent(id);
+      setAgent(updated);
+      setSyncOpen(false);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : (err as Error).message;
+      setError(msg);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  function computeLineDiff(
+    oldText: string,
+    newText: string,
+  ): Array<{ type: "add" | "remove" | "same"; line: string }> {
+    const a = oldText.split("\n");
+    const b = newText.split("\n");
+    // Myers LCS — build dp table
+    const m = a.length, n = b.length;
+    const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+    for (let i = m - 1; i >= 0; i--)
+      for (let j = n - 1; j >= 0; j--)
+        dp[i][j] = a[i] === b[j] ? dp[i+1][j+1] + 1 : Math.max(dp[i+1][j], dp[i][j+1]);
+    const result: Array<{ type: "add" | "remove" | "same"; line: string }> = [];
+    let i = 0, j = 0;
+    while (i < m || j < n) {
+      if (i < m && j < n && a[i] === b[j]) {
+        result.push({ type: "same", line: a[i++] }); j++;
+      } else if (j < n && (i >= m || dp[i][j+1] >= dp[i+1][j])) {
+        result.push({ type: "add", line: b[j++] });
+      } else {
+        result.push({ type: "remove", line: a[i++] });
+      }
+    }
+    return result;
+  }
+
+  // Collapse unchanged runs to 3 context lines around each hunk
+  function collapseContext(
+    diff: Array<{ type: "add" | "remove" | "same"; line: string }>,
+    ctx = 3,
+  ): Array<{ type: "add" | "remove" | "same" | "ellipsis"; line: string }> {
+    const result: Array<{ type: "add" | "remove" | "same" | "ellipsis"; line: string }> = [];
+    let i = 0;
+    while (i < diff.length) {
+      if (diff[i].type !== "same") { result.push(diff[i++]); continue; }
+      const start = i;
+      while (i < diff.length && diff[i].type === "same") i++;
+      const end = i;
+      const len = end - start;
+      if (len <= ctx * 2) { for (let k = start; k < end; k++) result.push(diff[k]); continue; }
+      for (let k = start; k < start + ctx; k++) result.push(diff[k]);
+      result.push({ type: "ellipsis", line: `… ${len - ctx * 2} unchanged lines` });
+      for (let k = end - ctx; k < end; k++) result.push(diff[k]);
+    }
+    return result;
+  }
+
+
   async function handleDeleteAgent() {
     if (!agent || deleteInProgress) return;
     setDeleteInProgress(true);
@@ -200,8 +278,8 @@ export default function AgentDetailPage({ params }: PageProps) {
             Agents
           </button>
           <ChevronRight className="size-3" aria-hidden />
-          <span className="truncate font-mono text-[11px] text-foreground">
-            {agent?.id ?? id}
+          <span className="truncate text-[13px] text-foreground">
+            {agent?.name?.trim() || (agent?.id ?? id).slice(0, 8)}
           </span>
         </nav>
         <Button
@@ -224,9 +302,39 @@ export default function AgentDetailPage({ params }: PageProps) {
 
       {agent ? (
         <>
+          {/* Template update banner — shown below breadcrumb when out of sync */}
+          {agent.template_id && !agent.template_in_sync && (
+            <div className="mt-4 flex items-center gap-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+              <RefreshCw className="size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+              <p className="flex-1 text-[13px] text-amber-800 dark:text-amber-300">
+                A new version of <span className="font-medium">{agent.template_id}</span> is available (v{agent.template_version} → v{agent.template_latest_version}). Review changes before updating.
+              </p>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSyncOpen(true)}
+                  className="border-amber-500/40 bg-transparent text-amber-700 hover:bg-amber-500/10 dark:text-amber-300"
+                >
+                  View changes
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => void handleTemplateSync()}
+                  disabled={syncing}
+                  className="bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600"
+                >
+                  {syncing ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                  Update now
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Hero */}
-          <header className="mt-6 flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-end sm:justify-between">
-            <div className="flex min-w-0 items-center gap-4">
+          <header className="mt-6 flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-start sm:justify-between">
+            {/* Left — avatar + identity */}
+            <div className="flex min-w-0 flex-1 items-start gap-4">
               <button
                 type="button"
                 onClick={() => setEditingPfp(true)}
@@ -236,20 +344,20 @@ export default function AgentDetailPage({ params }: PageProps) {
                 <AgentAvatar
                   name={agent.name ?? agent.id}
                   pfpUrl={agent.pfp_url}
-                  size={72}
+                  size={48}
                 />
               </button>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <h1
                   className={
-                    "text-[26px] font-semibold tracking-tight leading-none " +
+                    "truncate text-[22px] font-semibold tracking-tight leading-tight " +
                     (agent.name?.trim() ? "" : "text-muted-foreground")
                   }
                 >
                   {displayName}
                 </h1>
                 {agent.prompt?.trim() ? (
-                  <p className="mt-2 line-clamp-2 max-w-[520px] text-[14px] text-muted-foreground">
+                  <p className="mt-1 line-clamp-1 text-[13px] text-muted-foreground">
                     {agent.prompt}
                   </p>
                 ) : null}
@@ -260,12 +368,19 @@ export default function AgentDetailPage({ params }: PageProps) {
                   <Badge variant="outline" className="font-mono text-[11px]">
                     {agent.harness_id}
                   </Badge>
-                  <span className="text-[12px] text-muted-foreground">
-                    Created {formatTime(agent.created_at)}
+                  {agent.template_id && (
+                    <Badge variant="outline" className="font-mono text-[11px]">
+                      {agent.template_id} v{agent.template_version ?? "?"}
+                    </Badge>
+                  )}
+                  <span className="whitespace-nowrap text-[12px] text-muted-foreground">
+                    · Created {formatTime(agent.created_at)}
                   </span>
                 </div>
               </div>
             </div>
+
+            {/* Right — actions */}
             <div className="flex shrink-0 items-center gap-2">
               <Button
                 size="sm"
@@ -276,19 +391,19 @@ export default function AgentDetailPage({ params }: PageProps) {
               >
                 <Trash2 className="size-4" />
               </Button>
-              <Button size="lg" variant="outline" onClick={() => router.push(`/agents/${id}/edit`)}>
+              <Button size="sm" variant="outline" onClick={() => router.push(`/agents/${id}/edit`)}>
                 <Pencil className="size-4" />
                 Edit
               </Button>
               <Button
-                size="lg"
+                size="sm"
                 variant="outline"
                 onClick={() => router.push(`/agents/${id}/memory`)}
               >
                 Memory
               </Button>
               <Button
-                size="lg"
+                size="sm"
                 variant="outline"
                 onClick={() => router.push(`/agents/${id}/skills`)}
               >
@@ -296,7 +411,7 @@ export default function AgentDetailPage({ params }: PageProps) {
                 Skills
               </Button>
               <Button
-                size="lg"
+                size="sm"
                 onClick={() => void handleSpawn()}
                 disabled={spawning}
               >
@@ -513,6 +628,92 @@ export default function AgentDetailPage({ params }: PageProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Template sync — overlay diff panel */}
+      {syncOpen && agent && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-6"
+          onClick={(e) => { if (e.target === e.currentTarget) setSyncOpen(false); }}
+        >
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+
+          {/* Panel */}
+          <div className="relative flex h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border bg-background shadow-2xl">
+            {/* Header */}
+            <div className="flex shrink-0 items-center justify-between border-b px-6 py-4">
+              <div>
+                <h2 className="text-[15px] font-semibold tracking-tight">Template update</h2>
+                <p className="mt-0.5 font-mono text-[12px] text-muted-foreground">
+                  {agent.template_id} &nbsp;v{agent.template_version ?? "?"} → v{agent.template_latest_version}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setSyncOpen(false)}>
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={() => void handleTemplateSync()} disabled={syncing}>
+                  {syncing ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+                  Update to v{agent.template_latest_version}
+                </Button>
+              </div>
+            </div>
+
+            {/* Legend */}
+            <div className="flex shrink-0 items-center gap-4 border-b bg-muted/20 px-6 py-2 text-[11px] text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500/30" />
+                Added
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500/30" />
+                Removed
+              </span>
+            </div>
+
+            {/* Diff body */}
+            <div className="flex-1 overflow-y-auto">
+              {(() => {
+                const raw = computeLineDiff(agent.template_prompt ?? "", agent.template_latest_prompt ?? "");
+                const hasChanges = raw.some((c) => c.type !== "same");
+                const chunks = collapseContext(raw);
+                return hasChanges ? (
+                  <div className="font-mono text-[13px] leading-[1.7]">
+                    {chunks.map((chunk, i) => (
+                      <div
+                        key={i}
+                        className={
+                          chunk.type === "add"
+                            ? "flex gap-3 bg-emerald-500/10 px-6 py-px text-emerald-700 dark:text-emerald-400"
+                            : chunk.type === "remove"
+                            ? "flex gap-3 bg-red-500/10 px-6 py-px text-red-700 dark:text-red-400"
+                            : chunk.type === "ellipsis"
+                            ? "border-y bg-muted/40 px-6 py-2 text-[11px] text-muted-foreground/50 select-none"
+                            : "flex gap-3 px-6 py-px text-muted-foreground/70"
+                        }
+                      >
+                        {chunk.type !== "ellipsis" && (
+                          <span className="w-4 shrink-0 select-none opacity-40">
+                            {chunk.type === "add" ? "+" : chunk.type === "remove" ? "-" : " "}
+                          </span>
+                        )}
+                        {chunk.type !== "ellipsis" && (
+                          <span className="min-w-0 whitespace-pre-wrap break-words">{chunk.line || " "}</span>
+                        )}
+                        {chunk.type === "ellipsis" && chunk.line}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-[14px] text-muted-foreground">
+                    No prompt changes detected.
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

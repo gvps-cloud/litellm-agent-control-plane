@@ -17,6 +17,7 @@ import { z } from "zod";
 import { decrypt, encrypt } from "@/server/integrations/core/crypto";
 import type { SessionOrigin } from "@/server/integrations/core/origin";
 import { parseAttachedSkillIds } from "@/server/skill-prompt";
+import { getTemplate } from "@/server/templates";
 
 // ============================================================================
 // DB row types (re-export from Prisma, do not redefine)
@@ -145,6 +146,13 @@ export const CreateAgentBody = z.object({
    * IDs cause a 404 (same pattern as the single-skill attach route).
    */
   skill_ids: z.array(z.string().min(1)).optional(),
+  /**
+   * Template this agent is derived from. When provided, template_version is
+   * automatically set to the template's current version. The template prompt
+   * is injected at session spawn time (live read), so future template bumps
+   * reach this agent via POST /agents/:id/template/sync.
+   */
+  template_id: z.string().optional(),
   /**
    * Agent-level env vars persisted to the DB and injected into every
    * session container. Same constraints as CreateSessionBody.env_vars.
@@ -400,6 +408,18 @@ export interface ApiAgent {
    * by MAX_PINNED_PRELOAD. Editable per-agent on /agents/:id/memory.
    */
   preload_memory_limit: number;
+  /** Template this agent was created from. Null if not template-derived. */
+  template_id: string | null;
+  /** Version of the template at last sync. Null if not template-derived. */
+  template_version: number | null;
+  /** Current version of the referenced template. Null if not template-derived or template deleted. */
+  template_latest_version: number | null;
+  /** False when template_version < template_latest_version — "sync available". */
+  template_in_sync: boolean;
+  /** Snapshot of template.prompt at last creation/sync — the "before" side of the diff. Null if not template-derived or agent predates this field. */
+  template_prompt: string | null;
+  /** Current template prompt text — the "after" side of the diff. Null if not template-derived. */
+  template_latest_prompt: string | null;
   created_at: string;
 }
 
@@ -830,6 +850,17 @@ export function toApiAgent(row: AgentRow): ApiAgent {
       ? ((row as Record<string, unknown>).sandbox_files as SandboxFileSpec[])
       : [],
     preload_memory_limit: row.preload_memory_limit,
+    template_id: row.template_id ?? null,
+    template_version: row.template_version ?? null,
+    ...(() => {
+      const tpl = row.template_id ? getTemplate(row.template_id) : undefined;
+      return {
+        template_latest_version: tpl?.version ?? null,
+        template_in_sync: tpl ? (row.template_version ?? 0) >= tpl.version : true,
+        template_prompt: row.template_prompt ?? null,
+        template_latest_prompt: tpl?.prompt ?? null,
+      };
+    })(),
     created_at: row.created_at.toISOString(),
   };
 }
