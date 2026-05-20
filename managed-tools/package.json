@@ -13,6 +13,10 @@
     "./memory": {
       "types": "./dist/memory.d.ts",
       "default": "./dist/memory.js"
+    },
+    "./preview": {
+      "types": "./dist/preview.d.ts",
+      "default": "./dist/preview.js"
     }
   },
   "files": ["dist", "src"],

@@ -232,6 +232,9 @@ export interface SessionRow {
   // an opaque short-id. Null on brand-new sessions or rows whose history has
   // not yet been snapshotted — callers fall back to `Session {shortId}`.
   title_preview?: string | null;
+  // Browser-accessible preview URL for the service running inside the sandbox.
+  // Set after the agent calls report_preview_url({ port }). Null until then.
+  preview_url?: string | null;
 }
 
 /**

@@ -26,6 +26,12 @@ import {
   type SaveMemoryInput,
   type SearchMemoryInput,
 } from "@lap/managed-tools/memory";
+import {
+  callReportPreviewUrl,
+  reportPreviewUrlDescription,
+  reportPreviewUrlSchema,
+  type ReportPreviewUrlInput,
+} from "@lap/managed-tools/preview";
 
 export function buildMemoryMcpServer(): McpSdkServerConfigWithInstance | null {
   const env = memoryEnv();
@@ -59,14 +65,28 @@ export function buildMemoryMcpServer(): McpSdkServerConfigWithInstance | null {
     },
   );
 
+  const reportPreviewUrl = tool(
+    "report_preview_url",
+    reportPreviewUrlDescription,
+    reportPreviewUrlSchema,
+    async (input: ReportPreviewUrlInput) => {
+      const out = await callReportPreviewUrl(env, input);
+      return {
+        content: [{ type: "text" as const, text: out.text }],
+        ...(out.isError && { isError: true }),
+      };
+    },
+  );
+
   return createSdkMcpServer({
     name: "lap-memory",
     version: "0.1.0",
-    tools: [saveMemory, searchMemory],
+    tools: [saveMemory, searchMemory, reportPreviewUrl],
   });
 }
 
 export const MEMORY_TOOL_NAMES = [
   "mcp__lap-memory__save_memory",
   "mcp__lap-memory__search_memory",
+  "mcp__lap-memory__report_preview_url",
 ] as const;

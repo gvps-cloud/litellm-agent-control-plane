@@ -76,6 +76,30 @@
     ]
   },
   {
+    "id": "coding-agent",
+    "name": "Coding Agent",
+    "description": "General-purpose coding agent. Works on any repo — ships with memory, PR workflow, and live preview.",
+    "icon": "🤖",
+    "tags": [
+      "coding",
+      "preview",
+      "memory"
+    ],
+    "harness_id": "claude-agent-sdk",
+    "model": "anthropic/claude-sonnet-4-6",
+    "prompt": "You are a coding agent. You can help by writing code, answering questions about the codebase, debugging issues, or opening PRs — depending on what the task calls for.\n\nAlways:\n1. Search memory before starting work — prior context speeds you up.\n2. Save non-obvious findings to memory after each session.\n3. After opening a PR, follow the expose-preview procedure in your skill without being asked.",
+    "tools": [
+      "gh CLI",
+      "grep",
+      "find",
+      "save_memory",
+      "search_memory",
+      "report_preview_url"
+    ],
+    "requirements": null,
+    "skill_file": "skill.md"
+  },
+  {
     "id": "docs-correctness",
     "name": "Docs Correctness Checker",
     "description": "Scans all .md files in a repo for internal inconsistencies, contradictions, stale commands, and broken cross-references.",

@@ -727,6 +727,29 @@ app.get("/event", (c) =>
 );
 
 // ---------------------------------------------------------------------------
+// Preview proxy — forward /proxy/:port/* to localhost:<port> inside container
+// ---------------------------------------------------------------------------
+
+app.all("/proxy/:port/*", async (c) => {
+  const port = c.req.param("port");
+  const url = new URL(c.req.url);
+  const rest = url.pathname.replace(new RegExp(`^/proxy/${port}`), "") || "/";
+  const target = `http://localhost:${port}${rest}${url.search}`;
+  const headers = new Headers(c.req.raw.headers);
+  headers.delete("host");
+  const resp = await fetch(target, {
+    method: c.req.method,
+    headers,
+    body: ["GET", "HEAD"].includes(c.req.method) ? undefined : c.req.raw.body,
+  });
+  return new Response(resp.body, { status: resp.status, headers: resp.headers });
+});
+
+app.all("/proxy/:port", (c) =>
+  c.redirect(`/proxy/${c.req.param("port")}/`, 301),
+);
+
+// ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
 

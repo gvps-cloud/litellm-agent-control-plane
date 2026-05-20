@@ -72,6 +72,7 @@ model Session {
   task_arn           String?
   sandbox_url        String?
   harness_session_id String?
+  preview_url        String?
   failure_reason     String?
   response           Json?     // last harness reply blob (initial_prompt and most-recent message)
   history            Json?     // full opencode thread snapshot ([{info, parts}, ...]); refreshed after every send so a restarted pod can replay it

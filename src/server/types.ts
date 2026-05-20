@@ -471,6 +471,10 @@ export interface ApiSession {
   // instead of opaque short-ids. Null on brand-new sessions where no user
   // turn has been recorded yet — the UI falls back to `Session {shortId}`.
   title_preview: string | null;
+  // Browser-accessible URL to a live preview of the service running inside
+  // the sandbox. Set after the agent calls report_preview_url({ port })
+  // which POSTs to /sessions/:id/preview and stores sandbox_url/proxy/:port.
+  preview_url: string | null;
 }
 
 // Admin / observability — wire shape returned by GET /api/v1/admin/stats.
@@ -946,6 +950,7 @@ export function toApiSession(
     phase_detail: row.phase_detail ?? null,
     origin,
     title_preview: extractTitlePreview(row.history),
+    preview_url: row.preview_url ?? null,
   };
 }
 
