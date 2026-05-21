@@ -20,6 +20,7 @@
     "build": "tsc"
   },
   "dependencies": {
+    "undici": "^7.0.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

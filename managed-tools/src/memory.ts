@@ -30,6 +30,7 @@
  * cleanly without memory, the LLM simply doesn't see those tool names.
  */
 
+import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
@@ -276,6 +277,35 @@ function memoryUrl(
 // wrong server-side and the agent should see an error, not loop forever.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Proxy-aware fetch.
+//
+// Node.js's built-in `fetch` (undici-backed) does NOT automatically honour
+// HTTPS_PROXY / https_proxy environment variables. The vault sidecar is an
+// HTTP CONNECT proxy at 127.0.0.1:14322 — its whole job is to swap stub
+// credentials (e.g. `stub_lap_access_token_xxxx`) for real values on the
+// wire. If fetch bypasses the proxy the stub lands on the LAP server as-is,
+// HMAC verification fails, and every memory call returns 401.
+//
+// Fix: use undici's ProxyAgent when HTTPS_PROXY is set. The agent:
+//   • tunnels HTTPS through the vault CONNECT proxy
+//   • trusts the vault's MITM CA cert (already in NODE_EXTRA_CA_CERTS)
+//   • lets vault swap the stub tokens before they reach LAP
+//
+// When HTTPS_PROXY is absent (local dev, vault disabled) the dispatcher is
+// undefined and undici's fetch behaves identically to the global built-in.
+// ---------------------------------------------------------------------------
+
+let _proxyAgent: ProxyAgent | null | undefined; // undefined = not yet resolved
+
+function proxyDispatcher(): ProxyAgent | undefined {
+  if (_proxyAgent !== undefined) return _proxyAgent ?? undefined;
+  const proxyUrl =
+    process.env.HTTPS_PROXY ?? process.env.https_proxy ?? "";
+  _proxyAgent = proxyUrl ? new ProxyAgent(proxyUrl) : null;
+  return _proxyAgent ?? undefined;
+}
+
 let cachedAccessToken: string | null = null;
 
 function currentBearer(env: MemoryEnv): string {
@@ -310,13 +340,15 @@ async function rawCall(
   bearer: string,
 ): Promise<{ ok: boolean; status: number; data: unknown; error?: string }> {
   try {
-    const res = await fetch(url, {
+    const dispatcher = proxyDispatcher();
+    const res = await undiciFetch(url, {
       method,
       headers: {
         Authorization: `Bearer ${bearer}`,
         ...(body !== undefined && { "Content-Type": "application/json" }),
       },
       ...(body !== undefined && { body: JSON.stringify(body) }),
+      ...(dispatcher !== undefined && { dispatcher }),
     });
     const text = await res.text();
     const data = text ? safeJson(text) : null;
@@ -333,11 +365,16 @@ async function rawCall(
 
 async function refreshAccessToken(env: MemoryEnv): Promise<string | null> {
   try {
-    const res = await fetch(`${env.base_url}/api/v1/agent-auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: env.refresh_token }),
-    });
+    const dispatcher = proxyDispatcher();
+    const res = await undiciFetch(
+      `${env.base_url}/api/v1/agent-auth/refresh`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: env.refresh_token }),
+        ...(dispatcher !== undefined && { dispatcher }),
+      },
+    );
     if (!res.ok) return null;
     const json = (await res.json()) as { access_token?: string };
     return typeof json.access_token === "string" && json.access_token.length > 0
