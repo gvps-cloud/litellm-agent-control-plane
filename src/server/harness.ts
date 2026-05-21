@@ -130,6 +130,7 @@ export async function harnessCreateSession(
   if (opts.sandbox_tools !== undefined) body.sandbox_tools = opts.sandbox_tools;
   if (opts.projects !== undefined) body.projects = opts.projects;
   if (opts.agent_id !== undefined) body.agent_id = opts.agent_id;
+  if (opts.mcp_servers !== undefined) body.mcp_servers = opts.mcp_servers;
   let data = await postJson(
     `${sandbox_url}/session`,
     body,

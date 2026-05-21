@@ -45,7 +45,6 @@ import {
 } from "./recording-tool.js";
 import {
   buildSandboxMcpServer,
-  SANDBOX_TOOL_NAMES,
 } from "./sandbox-mcp.js";
 
 // SDK's auto-resolution of the Claude Code native binary fails when
@@ -119,6 +118,12 @@ interface SandboxProject {
   repo_url?: string;
 }
 
+interface ManagedMcpServer {
+  name: string;
+  url: string;
+  transport?: "sse" | "http";
+}
+
 interface Session {
   id: string;                          // our session id (returned to platform)
   system_prompt: string;               // per-session override from agent.prompt
@@ -130,6 +135,7 @@ interface Session {
   pending_kick: (() => void) | null;
   sandbox_tools: boolean;              // when true: restrict to sandbox MCP tools
   projects: SandboxProject[];          // available project templates (sandbox mode)
+  mcp_servers: ManagedMcpServer[];     // external MCP servers attached to session
 }
 
 const sessions = new Map<string, Session>();
@@ -322,18 +328,46 @@ async function runTurn(
     ],
     ...(CLAUDE_BIN ? { pathToClaudeCodeExecutable: CLAUDE_BIN } : {}),
     ...(s.sandbox_tools
-      ? {
-          // Sandbox mode: restrict built-in tools to safe read-only web tools
-          // and expose only the provision/execute MCP tools.
-          allowedTools: [
-            "WebFetch",
-            "WebSearch",
-            ...(sandboxMcp ? [...SANDBOX_TOOL_NAMES] : []),
-          ],
-          mcpServers: {
-            ...(sandboxMcp ? { "lap-sandbox": sandboxMcp } : {}),
-          },
-        }
+      ? (() => {
+          // Sandbox mode: block dangerous built-in file/shell tools and expose
+          // the lap-sandbox MCP (provision/execute) plus any external MCPs
+          // attached to this session (e.g. Linear, GitHub). External MCPs are
+          // called via LiteLLM's MCP proxy using the harness's LITELLM_API_KEY
+          // (vault-swapped at egress), so no raw credentials leave the platform.
+          const litellmKey = process.env.LITELLM_API_KEY ?? "";
+          const externalMcpServers: Record<string, import("@anthropic-ai/claude-agent-sdk").McpServerConfig> =
+            Object.fromEntries(
+              s.mcp_servers.map((m) => {
+                const transport = m.transport ?? "sse";
+                const headers = litellmKey
+                  ? { "Authorization": `Bearer ${litellmKey}` }
+                  : undefined;
+                if (transport === "http") {
+                  const cfg: import("@anthropic-ai/claude-agent-sdk").McpHttpServerConfig = {
+                    type: "http",
+                    url: m.url,
+                    ...(headers ? { headers } : {}),
+                  };
+                  return [m.name, cfg];
+                }
+                const cfg: import("@anthropic-ai/claude-agent-sdk").McpSSEServerConfig = {
+                  type: "sse",
+                  url: m.url,
+                  ...(headers ? { headers } : {}),
+                };
+                return [m.name, cfg];
+              })
+            );
+          return {
+            // No allowedTools positive-list when external MCPs are present —
+            // their tool names are not known at session-create time. Rely
+            // entirely on disallowedTools to block the dangerous built-ins.
+            mcpServers: {
+              ...(sandboxMcp ? { "lap-sandbox": sandboxMcp } : {}),
+              ...externalMcpServers,
+            },
+          };
+        })()
       : {
           // Normal mode: full memory + screenshot + recording tool set.
           mcpServers: {
@@ -698,6 +732,7 @@ app.post("/session", async (c) => {
   let files: Array<{ sandbox_path: string; content: string }> = [];
   let sandbox_tools = false;
   let projects: SandboxProject[] = [];
+  let mcp_servers: ManagedMcpServer[] = [];
   try {
     const body = (await c.req.json()) as {
       title?: string;
@@ -705,12 +740,16 @@ app.post("/session", async (c) => {
       files?: Array<{ sandbox_path: string; content: string }>;
       sandbox_tools?: boolean;
       projects?: Array<{ id: string; name: string; description: string; repo_url?: string }>;
+      mcp_servers?: Array<{ name: string; url: string; transport?: "sse" | "http" }>;
     };
     title = body?.title;
     prompt = body?.prompt;
     files = Array.isArray(body?.files) ? body.files : [];
     sandbox_tools = body?.sandbox_tools === true;
     projects = Array.isArray(body?.projects) ? body.projects : [];
+    mcp_servers = Array.isArray(body?.mcp_servers)
+      ? body.mcp_servers.filter(s => s?.name && s?.url)
+      : [];
   } catch {
     // empty body is fine — opencode accepts that too.
   }
@@ -735,6 +774,7 @@ app.post("/session", async (c) => {
     pending_kick: null,
     sandbox_tools,
     projects,
+    mcp_servers,
   });
   return c.json({ id, title: title ?? null });
 });

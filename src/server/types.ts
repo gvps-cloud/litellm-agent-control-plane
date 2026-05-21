@@ -716,6 +716,21 @@ export type AuthIdentity = { user_id: string };
 //   export function expectedBearer(): string  // for tests / debugging
 
 // ---- src/server/harness.ts ----
+
+/** External MCP server config passed to the harness at session creation. */
+export interface HarnessMcpServerSpec {
+  /** Name used as the key in the SDK's mcpServers map. */
+  name: string;
+  /**
+   * Full URL of the MCP server endpoint.
+   * For LiteLLM-proxied servers: `${LITELLM_API_BASE}/mcp/${server_name}`.
+   * The harness authenticates with its LITELLM_API_KEY (vault-swapped at egress).
+   */
+  url: string;
+  /** MCP transport type passed to the Claude Agent SDK. Default "sse". */
+  transport?: "sse" | "http";
+}
+
 export interface HarnessCreateSessionOpts {
   sandbox_url: string; // http://<task_ip>:<container_port>
   title?: string;
@@ -725,6 +740,8 @@ export interface HarnessCreateSessionOpts {
   sandbox_tools?: boolean;
   projects?: Array<{ id: string; name: string; description: string; repo_url?: string; branch?: string }>;
   agent_id?: string;
+  /** External MCP servers to attach to this session (inline harness only). */
+  mcp_servers?: HarnessMcpServerSpec[];
 }
 
 export interface HarnessSendMessageOpts {

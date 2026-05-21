@@ -50,6 +50,7 @@ import {
   toApiSession,
   type AgentRow,
   type HarnessMessageResponse,
+  type HarnessMcpServerSpec,
   type SessionRow,
   type WarmTaskRow,
 } from "@/server/types";
@@ -87,6 +88,47 @@ interface BringUpBody {
   title?: string;
   env_vars?: Record<string, string>;
   initial_attachments?: InitialAttachment[];
+}
+
+// ---------------------------------------------------------------------------
+// Resolve agent MCP server IDs → HarnessMcpServerSpec configs.
+// Fetches server metadata from LiteLLM and constructs URLs for LiteLLM's
+// MCP proxy. The harness uses its own LITELLM_API_KEY (vault-swapped) to
+// call these endpoints — no credentials flow through the session body.
+// ---------------------------------------------------------------------------
+
+async function resolveAgentMcpServers(
+  serverIds: string[],
+): Promise<HarnessMcpServerSpec[]> {
+  if (!serverIds || serverIds.length === 0) return [];
+  const litellmBase = env.LITELLM_API_BASE.replace(/\/+$/, "");
+  try {
+    const res = await fetch(`${litellmBase}/v1/mcp/server`, {
+      headers: { Authorization: `Bearer ${env.LITELLM_API_KEY}` },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return [];
+    const servers = (await res.json()) as Array<{
+      server_id: string;
+      server_name: string;
+      alias?: string;
+    }>;
+    const byId = new Map(servers.map((s) => [s.server_id, s]));
+    const specs: HarnessMcpServerSpec[] = [];
+    for (const id of serverIds) {
+      const s = byId.get(id);
+      if (!s) continue;
+      const name = s.alias || s.server_name;
+      specs.push({
+        name,
+        url: `${litellmBase}/mcp/${encodeURIComponent(name)}`,
+        transport: "sse",
+      });
+    }
+    return specs;
+  } catch {
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -534,6 +576,15 @@ export const POST = wrap<RouteContext>(async (req, ctx) => {
     const rawProjects = (agent as Record<string, unknown>).projects;
     const projects = Array.isArray(rawProjects) ? rawProjects as Array<{ id: string; name: string; description: string; repo_url?: string }> : [];
 
+    // Resolve agent's attached MCP server IDs to {name, url} configs so the
+    // harness can wire them into the SDK's mcpServers option. Each server is
+    // accessed through LiteLLM's MCP proxy using the harness's LITELLM_API_KEY
+    // (vault-swapped at egress) — no raw credentials flow to the harness pod.
+    const rawMcpServerIds = Array.isArray(agent.mcp_servers)
+      ? (agent.mcp_servers as unknown[]).filter((v): v is string => typeof v === "string")
+      : [];
+    const mcpServers = await resolveAgentMcpServers(rawMcpServerIds);
+
     const harness_session_id = await harnessCreateSession({
       sandbox_url: inlineUrl,
       title: body.title ?? "session",
@@ -541,6 +592,7 @@ export const POST = wrap<RouteContext>(async (req, ctx) => {
       sandbox_tools: true,
       projects,
       agent_id: agent.agent_id,
+      mcp_servers: mcpServers,
     });
 
     await prisma.session.update({
