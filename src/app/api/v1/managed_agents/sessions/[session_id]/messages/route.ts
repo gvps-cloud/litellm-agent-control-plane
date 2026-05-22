@@ -28,9 +28,13 @@ export async function GET(req: Request, ctx: RouteContext) {
     if (!row) httpError(404, `session ${session_id} not found`);
 
     if (!row.sandbox_url || !row.harness_session_id) {
-      // Sessions still spinning up (creating, no harness session yet) and
-      // dead/failed rows have nothing to fetch. Return [] so the UI can
-      // show an empty thread without special-casing each status.
+      // No live harness to fetch from (still spinning up, or dead/reaped with
+      // its pointers cleared). Serve the persisted thread snapshot if we have
+      // one so reaped sessions — including automation runs — still render their
+      // full history in the chat instead of an empty thread.
+      if (Array.isArray(row.history) && row.history.length > 0) {
+        return Response.json(row.history);
+      }
       return Response.json([]);
     }
 
