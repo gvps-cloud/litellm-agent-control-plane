@@ -1999,7 +1999,7 @@ function Composer({
     ? "Sandbox not ready yet…"
     : hasInProgress
       ? "Queue a follow up"
-      : "Add a follow up";
+      : "Add a follow up — type / to reference a skill";
 
   // Stage a clipboard / drop / file-picker file onto the attachments list.
   // Validates count + MIME + size client-side so the user gets immediate
