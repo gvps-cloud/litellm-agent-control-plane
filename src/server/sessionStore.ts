@@ -34,6 +34,15 @@ type Tx = Omit<
 >;
 
 async function nextSeq(tx: Tx, session_id: string): Promise<number> {
+  // Serialize concurrent inserts for the same session on a transaction-scoped
+  // advisory lock, so two callers can't both read the same max(seq) and then
+  // collide on the (session_id, seq) unique constraint (which would be caught,
+  // logged, and silently drop the turn — defeating durability). The lock is
+  // keyed on the session id and released automatically at commit/rollback;
+  // because it lives in Postgres it serializes across web replicas too, not
+  // just within one process. (A plain `SELECT MAX(seq) … FOR UPDATE` can't be
+  // used here — Postgres rejects FOR UPDATE with aggregate functions.)
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${session_id}))`;
   const last = await tx.sessionMessage.findFirst({
     where: { session_id },
     orderBy: { seq: "desc" },
