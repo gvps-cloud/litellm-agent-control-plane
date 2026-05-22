@@ -18,6 +18,7 @@
  * tiny.
  */
 
+import type { AutomationRun } from "@prisma/client";
 import { Cron } from "croner";
 import { prisma } from "@/server/db";
 import { env } from "@/server/env";
@@ -143,6 +144,39 @@ async function fireAutomation(
     });
     throw e;
   }
+}
+
+/**
+ * Fire one automation immediately, ignoring its schedule — for the UI
+ * "Run now" testing button. Records a run exactly like the worker tick would
+ * and returns it (running, or failed if the spawn failed). Does NOT touch
+ * next_run_at, so the normal schedule continues unaffected. Returns null if
+ * the automation doesn't exist.
+ */
+export async function runAutomationNow(
+  automationId: string,
+): Promise<AutomationRun | null> {
+  const auto = await prisma.automation.findUnique({
+    where: { automation_id: automationId },
+  });
+  if (auto === null) return null;
+  const row: DueAutomationRow = {
+    automation_id: auto.automation_id,
+    agent_id: auto.agent_id,
+    name: auto.name,
+    instruction: auto.instruction,
+    cron_expr: auto.cron_expr,
+  };
+  try {
+    await fireAutomation(row, new Date());
+  } catch {
+    // fireAutomation already recorded the run as failed; swallow so the
+    // caller gets the run row back rather than an exception.
+  }
+  return prisma.automationRun.findFirst({
+    where: { automation_id: automationId },
+    orderBy: { started_at: "desc" },
+  });
 }
 
 /**

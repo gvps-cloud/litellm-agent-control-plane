@@ -758,6 +758,17 @@ export function deleteAutomation(
   );
 }
 
+/** Fire an automation immediately (ignores its schedule). Returns the new run. */
+export function runAutomationNow(
+  agentId: string,
+  automationId: string,
+): Promise<AutomationRunRow> {
+  return api<AutomationRunRow>(
+    "POST",
+    `/v1/managed_agents/agents/${encodeURIComponent(agentId)}/automations/${encodeURIComponent(automationId)}/run`,
+  );
+}
+
 export interface AutomationRunRow {
   id: string;
   automation_id: string;
