@@ -520,6 +520,10 @@ export interface ApiAutomationRun {
   error: string | null;
   started_at: string;
   finished_at: string | null;
+  // Populated only on the single-run detail endpoint (null in the list) so the
+  // run page can show what the automation was without a second fetch.
+  automation_instruction?: string | null;
+  automation_cron?: string | null;
 }
 
 export interface ApiSession {
@@ -1018,18 +1022,20 @@ export function toApiAutomation(row: AutomationRow): ApiAutomation {
 
 export function toApiAutomationRun(
   row: AutomationRunRow,
-  automationName: string | null,
+  automation: { name: string | null; instruction?: string; cron_expr?: string } | null,
 ): ApiAutomationRun {
   return {
     id: row.run_id,
     automation_id: row.automation_id,
-    automation_name: automationName,
+    automation_name: automation?.name ?? null,
     agent_id: row.agent_id,
     session_id: row.session_id ?? null,
     status: row.status,
     error: row.error ?? null,
     started_at: row.started_at.toISOString(),
     finished_at: row.finished_at ? row.finished_at.toISOString() : null,
+    automation_instruction: automation?.instruction ?? null,
+    automation_cron: automation?.cron_expr ?? null,
   };
 }
 
