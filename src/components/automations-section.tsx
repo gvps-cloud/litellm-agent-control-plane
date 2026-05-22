@@ -13,7 +13,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Clock, Loader2, Play, Plus, Trash2 } from "lucide-react";
+import { Check, Clock, Loader2, Pencil, Play, Plus, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,6 +68,7 @@ export function AutomationsSection({ agentId }: Props) {
   const [automations, setAutomations] = useState<AutomationRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [runningId, setRunningId] = useState<string | null>(null);
   const [ranId, setRanId] = useState<string | null>(null);
@@ -149,29 +150,50 @@ export function AutomationsSection({ agentId }: Props) {
         </div>
       ) : (
         <ul className="divide-y rounded-lg border bg-card/40">
-          {automations.map((auto) => (
-            <AutomationItem
-              key={auto.id}
-              automation={auto}
-              busy={busyId === auto.id}
-              running={runningId === auto.id}
-              ran={ranId === auto.id}
-              onRun={() => handleRunNow(auto.id)}
-              onToggle={() => handleToggle(auto)}
-              onDelete={() => handleDelete(auto.id)}
-            />
-          ))}
+          {automations.map((auto) =>
+            editingId === auto.id ? (
+              <li key={auto.id} className="p-3">
+                <AutomationForm
+                  initial={{
+                    instruction: auto.instruction,
+                    cron_expr: auto.cron_expr,
+                  }}
+                  submitLabel="Save changes"
+                  onSubmit={async (values) => {
+                    await updateAutomation(agentId, auto.id, values);
+                    setEditingId(null);
+                    await reload();
+                  }}
+                  onCancel={() => setEditingId(null)}
+                  onError={setError}
+                />
+              </li>
+            ) : (
+              <AutomationItem
+                key={auto.id}
+                automation={auto}
+                busy={busyId === auto.id}
+                running={runningId === auto.id}
+                ran={ranId === auto.id}
+                onRun={() => handleRunNow(auto.id)}
+                onEdit={() => setEditingId(auto.id)}
+                onToggle={() => handleToggle(auto)}
+                onDelete={() => handleDelete(auto.id)}
+              />
+            ),
+          )}
         </ul>
       )}
 
       {adding ? (
-        <AddAutomationForm
-          agentId={agentId}
-          onCancel={() => setAdding(false)}
-          onCreated={async () => {
+        <AutomationForm
+          submitLabel="Save"
+          onSubmit={async (values) => {
+            await createAutomation(agentId, values);
             setAdding(false);
             await reload();
           }}
+          onCancel={() => setAdding(false)}
           onError={setError}
         />
       ) : (
@@ -195,6 +217,7 @@ interface ItemProps {
   running: boolean;
   ran: boolean;
   onRun: () => void;
+  onEdit: () => void;
   onToggle: () => void;
   onDelete: () => void;
 }
@@ -205,6 +228,7 @@ function AutomationItem({
   running,
   ran,
   onRun,
+  onEdit,
   onToggle,
   onDelete,
 }: ItemProps) {
@@ -241,6 +265,16 @@ function AutomationItem({
               <Play className="h-3.5 w-3.5" />
             )}
             <span className="ml-1.5">{ran ? "Started" : "Run now"}</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onEdit}
+            disabled={busy}
+            aria-label="Edit automation"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            <span className="ml-1.5">Edit</span>
           </Button>
           <Button variant="ghost" size="sm" onClick={onToggle} disabled={busy}>
             {busy ? (
@@ -279,19 +313,38 @@ function AutomationItem({
   );
 }
 
+/** Resolve a stored cron back to its preset label, or "Custom cron…". */
+function cronToScheduleLabel(cron: string): string {
+  return SCHEDULE_PRESETS.find((p) => p.cron === cron)?.label ?? CUSTOM_LABEL;
+}
+
 interface FormProps {
-  agentId: string;
+  // When present, the form edits this automation; otherwise it creates a new one.
+  initial?: { instruction: string; cron_expr: string };
+  submitLabel: string;
+  onSubmit: (values: { instruction: string; cron_expr: string }) => Promise<void>;
   onCancel: () => void;
-  onCreated: () => void | Promise<void>;
   onError: (msg: string) => void;
 }
 
-function AddAutomationForm({ agentId, onCancel, onCreated, onError }: FormProps) {
-  const [instruction, setInstruction] = useState("");
+function AutomationForm({
+  initial,
+  submitLabel,
+  onSubmit,
+  onCancel,
+  onError,
+}: FormProps) {
+  const [instruction, setInstruction] = useState(initial?.instruction ?? "");
   // The Select value is the human label (shown verbatim in the trigger); the
-  // cron is resolved from it on save.
-  const [scheduleLabel, setScheduleLabel] = useState(DEFAULT_SCHEDULE_LABEL);
-  const [customCron, setCustomCron] = useState("");
+  // cron is resolved from it on save. When editing a custom cron, start on the
+  // custom option with the stored expression pre-filled.
+  const initialLabel = initial
+    ? cronToScheduleLabel(initial.cron_expr)
+    : DEFAULT_SCHEDULE_LABEL;
+  const [scheduleLabel, setScheduleLabel] = useState(initialLabel);
+  const [customCron, setCustomCron] = useState(
+    initial && initialLabel === CUSTOM_LABEL ? initial.cron_expr : "",
+  );
   const [saving, setSaving] = useState(false);
 
   const isCustom = scheduleLabel === CUSTOM_LABEL;
@@ -304,11 +357,7 @@ function AddAutomationForm({ agentId, onCancel, onCreated, onError }: FormProps)
     if (!canSave) return;
     setSaving(true);
     try {
-      await createAutomation(agentId, {
-        instruction: instruction.trim(),
-        cron_expr: cronExpr,
-      });
-      await onCreated();
+      await onSubmit({ instruction: instruction.trim(), cron_expr: cronExpr });
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -365,7 +414,7 @@ function AddAutomationForm({ agentId, onCancel, onCreated, onError }: FormProps)
           Cancel
         </Button>
         <Button size="sm" onClick={handleSave} disabled={!canSave}>
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : submitLabel}
         </Button>
       </div>
     </div>
