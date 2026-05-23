@@ -60,6 +60,11 @@ import {
 // cwd=/work/repo). Resolve the sibling platform package's `claude` binary
 // off the SDK's own module path and pin it via options.pathToClaudeCodeExecutable.
 function resolveClaudeBinary(): string | undefined {
+  // Env override takes priority — useful for local dev where the SDK native
+  // binary isn't bundled (e.g. arm64 Mac with a system-installed claude).
+  if (process.env.CLAUDE_CODE_EXECUTABLE && existsSync(process.env.CLAUDE_CODE_EXECUTABLE)) {
+    return process.env.CLAUDE_CODE_EXECUTABLE;
+  }
   const req = createRequire(import.meta.url);
   let sdkPath: string;
   try {
