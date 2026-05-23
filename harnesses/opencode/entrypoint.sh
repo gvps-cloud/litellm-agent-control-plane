@@ -46,9 +46,32 @@ case "$LITELLM_DEFAULT_MODEL" in
   *)
     MODEL_OPTS='{}' ;;
 esac
+# Sandbox tools: when E2B is configured, mount the bundled stdio MCP that
+# exposes provision/execute (same tool surface as the claude-agent-sdk harness).
+# Lives at /opt/lap/opencode-sandbox-mcp with its own node_modules baked in.
+MCP_BLOCK=""
+if [ -n "${E2B_API_KEY:-}" ]; then
+  MCP_BLOCK=$(cat <<EOF
+  "mcp": {
+    "sandbox": {
+      "type": "local",
+      "command": ["node", "/opt/lap/opencode-sandbox-mcp/sandbox-mcp.mjs"],
+      "enabled": true,
+      "environment": {
+        "E2B_API_KEY": "${E2B_API_KEY}",
+        "E2B_TEMPLATE": "${E2B_TEMPLATE:-base}"
+      }
+    }
+  },
+EOF
+)
+  echo "[entrypoint] E2B configured — mounting sandbox MCP (provision/execute)"
+fi
+
 cat > opencode.json <<EOF
 {
   "\$schema": "https://opencode.ai/config.json",
+${MCP_BLOCK}
   "provider": {
     "litellm": {
       "npm": "@ai-sdk/anthropic",
