@@ -128,7 +128,7 @@ export function EgressHostsEditor({ value, onChange, disabled, required }: Egres
       ) : null}
       {required && value.length === 0 ? (
         <p className="text-[11px] text-destructive">
-          Add at least one allowed host so this agent can reach the services it needs.
+          Add at least one host this secret may be sent to.
         </p>
       ) : null}
     </div>
