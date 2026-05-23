@@ -142,9 +142,20 @@ async function execute({ sandbox_name, cmd }) {
   try {
     const sandbox = await Sandbox.connect(id, { apiKey: API_KEY });
     const result = await sandbox.commands.run(cmd, { timeoutMs: EXECUTE_TIMEOUT_MS });
-    return textResult((result.stdout ?? "") + (result.stderr ?? ""));
+    const out = (result.stdout ?? "") + (result.stderr ?? "");
+    const code = result.exitCode ?? 0;
+    // A non-zero exit is a failed command — surface it so the agent doesn't
+    // treat compiler/test/missing-file errors as success.
+    return code === 0
+      ? textResult(out)
+      : textResult(`${out}\n[command exited with code ${code}]`, true);
   } catch (err) {
-    return textResult(`execute error: ${err instanceof Error ? err.message : String(err)}`, true);
+    // Some e2b SDK versions throw CommandExitError on non-zero exit instead of
+    // returning a result — that error still carries stdout/stderr/exitCode.
+    const e = err && typeof err === "object" ? err : {};
+    const out = (e.stdout ?? "") + (e.stderr ?? "");
+    const msg = err instanceof Error ? err.message : String(err);
+    return textResult(out ? `${out}\n[command failed: ${msg}]` : `execute error: ${msg}`, true);
   }
 }
 
