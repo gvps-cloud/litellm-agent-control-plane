@@ -6,6 +6,7 @@ export {
   searchMemoryDescription,
   callSaveMemory,
   callSearchMemory,
+  scrubSecrets,
   type MemoryEnv,
   type MemoryToolResult,
   type SaveMemoryInput,
