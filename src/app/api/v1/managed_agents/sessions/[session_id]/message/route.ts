@@ -32,6 +32,7 @@ import {
   harnessSendMessage,
   isDeadSessionError,
   isHardConnectFailure,
+  prependAgentSystemPrompt,
 } from "@/server/harness";
 import { registry } from "@/server/metrics";
 import { rehydrateSession } from "@/server/rehydrate";
@@ -253,11 +254,26 @@ export async function POST(req: Request, ctx: RouteContext) {
     // stay drop-in compatible with the Python harness wire format; the
     // harness itself validates the `type` discriminator, so we trust the
     // shape here and cast to the runtime contract.
-    const parts = expandMessage(
+    let parts = expandMessage(
       body.text,
       body.parts as HarnessMessagePart[] | undefined,
       body.attachments,
     );
+
+    // First turn only: lead with the agent's system prompt. opencode has no
+    // per-session system-prompt API, so this is how the agent's persona/rules
+    // reach a shared inline-harness session (see prependAgentSystemPrompt).
+    // Costs one extra count + one agent read, and only on turn 1.
+    const priorTurns = await prisma.sessionMessage.count({
+      where: { session_id },
+    });
+    if (priorTurns === 0) {
+      const agentRow = await prisma.agent.findUnique({
+        where: { agent_id: cached.agent_id },
+        select: { prompt: true },
+      });
+      parts = prependAgentSystemPrompt(agentRow?.prompt, parts);
+    }
 
     // Durably record the user turn *before* dialing the harness so a mid-turn
     // sandbox death still leaves it recoverable. Best-effort: a DB hiccup must
