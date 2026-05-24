@@ -48,6 +48,7 @@ import {
   harnessCreateSession,
   harnessListMessages,
   harnessSendMessage,
+  prependAgentSystemPrompt,
 } from "@/server/harness";
 import {
   CreateSessionBody,
@@ -546,7 +547,12 @@ async function runInitialPrompt(
     // Anthropic API content-block shape, which the claude-agent-sdk harness
     // forwards verbatim. `HarnessMessagePart` is intentionally permissive
     // (`[key: string]: unknown`) so the extra `source` field passes through.
-    const parts =
+    // runInitialPrompt is always the session's first turn, so lead with the
+    // agent's system prompt (opencode has no per-session system-prompt API —
+    // see prependAgentSystemPrompt). The interactive /message route does the
+    // same on turn 1, gated on no prior turns, so this never double-injects.
+    const parts = prependAgentSystemPrompt(
+      agent.prompt,
       initial_attachments && initial_attachments.length > 0
         ? [
             ...(initial_prompt ? [{ type: "text", text: initial_prompt }] : []),
@@ -559,7 +565,8 @@ async function runInitialPrompt(
               },
             })),
           ]
-        : expandMessage(initial_prompt);
+        : expandMessage(initial_prompt),
+    );
     // Record the initial prompt in the durable log *before* sending so the
     // first turn is replayable if the sandbox dies before the agent replies.
     const userMsg = await appendUserMessage({
