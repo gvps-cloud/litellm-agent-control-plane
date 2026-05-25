@@ -27,8 +27,14 @@ One command — starts postgres + the proxy on a **free** port and only returns
 once `/health/readiness` is 200 (or exits non-zero with log + OOM diagnostics):
 
 ```bash
-litellm-up          # prints PORT=…, MASTER_KEY=sk-1234, URL=…  — never hardcode 4000
+litellm-status      # JSON: ready|provisioning|down|oom — call this first
+litellm-up          # if not ready: free port + proxy (--use_prisma_db_push), blocks until ready
+                    # prints {"port":N,"master_key":"sk-1234","url":"…"} — never hardcode 4000
 ```
+
+`litellm-up` uses `--use_prisma_db_push` (≈0.6 s) instead of `migrate deploy`
+(~20 min across 124 migrations). **playwright + chromium** are pre-installed
+(`PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright`) for in-sandbox UI screenshots.
 
 `prisma` is pre-installed and its engines/client are pre-fetched at build, so
 there's no ~150 MiB first-boot download. Postgres + `DATABASE_URL` are
