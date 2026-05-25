@@ -23,14 +23,20 @@ Both repos are public, so no token is baked into the image.
 
 ## Standing up the proxy (from inside a sandbox)
 
-Postgres is already running and `DATABASE_URL` is already set — just boot the proxy:
+One command — starts postgres + the proxy on a **free** port and only returns
+once `/health/readiness` is 200 (or exits non-zero with log + OOM diagnostics):
 
 ```bash
-cd ~/litellm && python -m litellm.proxy.proxy_cli --port 4000 --detailed_debug
+litellm-up          # prints PORT=…, MASTER_KEY=sk-1234, URL=…  — never hardcode 4000
 ```
 
-In an interactive shell you can `source /usr/local/bin/dev-up` to print the env
-and ensure postgres is up, but it's not required.
+`prisma` is pre-installed and its engines/client are pre-fetched at build, so
+there's no ~150 MiB first-boot download. Postgres + `DATABASE_URL` are
+pre-provisioned. The pre-cloned repo's branch/commit are recorded in
+`/home/user/litellm/AGENTS.md` — use that checkout, don't re-clone.
+
+Manual alternative (if you need flags): `source /usr/local/bin/dev-up` then
+`cd ~/litellm && python -m litellm.proxy.proxy_cli --config /tmp/litellm_config.yaml --port <free-port>`.
 
 Dev credentials baked into the image as `ENV` (and echoed by `dev-up`):
 
