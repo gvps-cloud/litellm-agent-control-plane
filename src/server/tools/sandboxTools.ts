@@ -21,16 +21,16 @@ export async function provisionSandbox(
   name: string,
   agent: AgentRow,
   existingSandboxes?: Record<string, string>,
-): Promise<string> {
+): Promise<{ message: string; envMap: Record<string, string> }> {
   const registry = getRegistry();
   if (env.SANDBOX_CHOICE && env.SANDBOX_CHOICE in registry) {
     const p = registry[env.SANDBOX_CHOICE];
     const existing = existingSandboxes?.[name] ?? sandboxMap.get(mapKey(session_id, name));
     if (existing) {
       sandboxMap.set(mapKey(session_id, name), existing);
-      return `sandbox '${name}' ready`;
+      return { message: `sandbox '${name}' ready`, envMap: {} };
     }
-    const id = await p.create({ session_id, agent });
+    const { id, envMap } = await p.create({ session_id, agent });
     const url = `${p.urlScheme}://${id}`;
     sandboxMap.set(mapKey(session_id, name), url);
     const merged = { ...(existingSandboxes ?? {}), [name]: url };
@@ -38,7 +38,7 @@ export async function provisionSandbox(
       where: { session_id },
       data: { sandboxes: merged } as Prisma.SessionUpdateInput,
     });
-    return `sandbox '${name}' ready`;
+    return { message: `sandbox '${name}' ready`, envMap };
   }
 
   if (env.LOCAL_EXECUTOR_URL) {
@@ -48,7 +48,7 @@ export async function provisionSandbox(
       where: { session_id },
       data: { sandboxes: merged } as Prisma.SessionUpdateInput,
     });
-    return `sandbox '${name}' ready`;
+    return { message: `sandbox '${name}' ready`, envMap: {} };
   }
 
   if (env.LOCAL_SANDBOX_URL) {
@@ -58,7 +58,7 @@ export async function provisionSandbox(
       where: { session_id },
       data: { sandboxes: merged } as Prisma.SessionUpdateInput,
     });
-    return `sandbox '${name}' ready`;
+    return { message: `sandbox '${name}' ready`, envMap: {} };
   }
 
   // Idempotency: if this sandbox name was already provisioned, skip the
@@ -66,7 +66,7 @@ export async function provisionSandbox(
   const existingUrl = existingSandboxes?.[name] ?? sandboxMap.get(mapKey(session_id, name));
   if (existingUrl) {
     sandboxMap.set(mapKey(session_id, name), existingUrl);
-    return `sandbox '${name}' ready`;
+    return { message: `sandbox '${name}' ready`, envMap: {} };
   }
 
   const { task_arn } = await runTask({ agent: { ...agent, harness_id: HARNESS_EXECUTOR }, session_id });
@@ -92,7 +92,7 @@ export async function provisionSandbox(
   });
 
   sandboxMap.set(mapKey(session_id, name), sandbox_url);
-  return `sandbox '${name}' ready`;
+  return { message: `sandbox '${name}' ready`, envMap: {} };
 }
 
 /**

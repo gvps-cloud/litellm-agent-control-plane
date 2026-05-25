@@ -273,6 +273,8 @@ export const UpdateAgentBody = z.object({
   deny_out: z.array(egressHostEntry).optional(),
   /** Replace per-credential host bindings. See CreateAgentBody.env_var_hosts. */
   env_var_hosts: envVarHostsSchema,
+  /** Replace the full sandbox_files array. Used by lap_update_sandbox_setup to update setup.sh. */
+  sandbox_files: z.array(SandboxFileSpecSchema).optional(),
 });
 export type UpdateAgentBody = z.infer<typeof UpdateAgentBody>;
 

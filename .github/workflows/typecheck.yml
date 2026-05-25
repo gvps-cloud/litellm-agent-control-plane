@@ -24,6 +24,16 @@ jobs:
 
       - run: npx tsc --noEmit
 
+      # Guard: ensure the issue-reporting instruction is present in the first-turn
+      # prompt injection. This check fails if a PR overwrites the block.
+      - name: Assert issue reporting prompt is present
+        run: |
+          FILE="src/app/api/v1/managed_agents/sessions/[session_id]/message/route.ts"
+          grep -q "report_issue" "$FILE" || { echo "FAIL: report_issue not found in message route"; exit 1; }
+          grep -q "sandbox restarts" "$FILE"  || { echo "FAIL: sandbox restart case missing from issue reporting block"; exit 1; }
+          grep -q "agent_id" "$FILE" || { echo "FAIL: agent_id not found in issue reporting block"; exit 1; }
+          echo "✓ issue reporting prompt block present and complete"
+
   typecheck-harness:
     runs-on: ubuntu-latest
     permissions:
