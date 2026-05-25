@@ -492,7 +492,7 @@ async function finishBringUp(
 // last_seen_at heartbeat cadence while the initial agent task runs. Must stay
 // comfortably below SESSION_IDLE_TIMEOUT_MS (reconcile.ts) so an in-flight turn
 // is never mistaken for an idle session by the reconciler.
-const INITIAL_TASK_HEARTBEAT_MS = 60_000;
+const INITIAL_TASK_HEARTBEAT_MS = 15_000;
 
 // Snapshot the live harness thread into Session.history so the chat can render
 // the conversation even after the sandbox is reaped. Automation runs and any
@@ -506,6 +506,7 @@ async function snapshotThreadToHistory(
 ): Promise<void> {
   try {
     const msgs = await harnessListMessages({ sandbox_url, harness_session_id });
+    console.log(`[heartbeat] session=${session_id} snapshot msgs=${msgs.length}`);
     if (msgs.length === 0) return;
     await prisma.session.update({
       where: { session_id },
@@ -513,7 +514,7 @@ async function snapshotThreadToHistory(
     });
   } catch (err) {
     console.warn(
-      `initial_prompt history snapshot failed for ${session_id}: ${err instanceof Error ? err.message : String(err)}`,
+      `[heartbeat] session=${session_id} snapshot failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 }
@@ -529,8 +530,7 @@ async function runInitialPrompt(
   // Keep last_seen_at fresh while the (2-15 min) initial agent task runs.
   // Without this, last_seen_at stays pinned at session-creation time and the
   // idle reaper (see SESSION_IDLE_TIMEOUT_MS in reconcile.ts) kills the session
-  // mid-task — even though the agent is actively working. The timer is unref'd
-  // so it can never keep the process alive on its own.
+  // mid-task — even though the agent is actively working.
   const heartbeat: NodeJS.Timeout = setInterval(() => {
     void prisma.session
       .update({ where: { session_id }, data: { last_seen_at: new Date() } })
@@ -543,8 +543,6 @@ async function runInitialPrompt(
     // mid-flight still leaves a partial thread to render in the chat.
     void snapshotThreadToHistory(session_id, sandbox_url, harness_session_id);
   }, INITIAL_TASK_HEARTBEAT_MS);
-  // Don't keep the event loop alive solely for this timer.
-  if (typeof heartbeat.unref === "function") heartbeat.unref();
 
   try {
     // Build Claude-format multimodal parts when attachments are present.
@@ -780,15 +778,15 @@ export const POST = wrap<RouteContext>(async (req, ctx) => {
       sandboxes: null,
     });
 
-    if (body.initial_prompt) {
-      void harnessSendMessage({
-        sandbox_url: inlineUrl,
+    if (body.initial_prompt || (body.initial_attachments && body.initial_attachments.length > 0)) {
+      void runInitialPrompt(
+        agent,
+        session.session_id,
+        inlineUrl,
         harness_session_id,
-        model: agent.model,
-        parts: prependAgentSystemPrompt(agent.prompt, expandMessage(body.initial_prompt), session.session_id),
-      }).catch((err: unknown) => {
-        console.error(`brain-inline initial_prompt failed: ${err instanceof Error ? err.message : String(err)}`);
-      });
+        body.initial_prompt ?? "",
+        body.initial_attachments,
+      );
     }
 
     const updatedSession = await prisma.session.findUniqueOrThrow({ where: { session_id: session.session_id } });
