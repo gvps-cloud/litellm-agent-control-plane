@@ -22,7 +22,11 @@ const VAULT_PROXY_TOKEN = process.env.VAULT_PROXY_TOKEN;
 // this is "max idle before reaping", not a hard cap on total task time. 30 min
 // tolerates long thinking gaps between tool calls without leaving zombies.
 const SANDBOX_TIMEOUT_MS = 1_800_000;
-const EXECUTE_TIMEOUT_MS = 120_000;
+// Per-command cap. A single step like a UI screenshot (cold chromium launch +
+// lazy-compiled route + login + render) can run past 2 min; 120s silently
+// terminated those mid-flight. 3 min gives that flow margin without leaving a
+// genuinely hung command running much longer.
+const EXECUTE_TIMEOUT_MS = 180_000;
 
 const USE_DIRECT = !ENV_SESSION_ID;
 const sandboxes = new Map();
