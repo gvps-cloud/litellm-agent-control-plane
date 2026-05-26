@@ -276,16 +276,32 @@ export async function POST(req: Request, ctx: RouteContext) {
     const priorTurns = await prisma.sessionMessage.count({
       where: { session_id },
     });
+    const isInline = cached.harness_id === HARNESS_OPENCODE || cached.harness_id === HARNESS_OPENCODE_BRAIN_INLINE;
     if (priorTurns === 0) {
       const agentRow = await prisma.agent.findUnique({
         where: { agent_id: cached.agent_id },
         select: { prompt: true, agent_id: true },
       });
-      const isOpencode = cached.harness_id === HARNESS_OPENCODE || cached.harness_id === HARNESS_OPENCODE_BRAIN_INLINE;
-      const issueToolName = isOpencode ? "lap-issue-reporter_report_issue" : "report_issue";
+      const issueToolName = isInline ? "lap-issue-reporter_report_issue" : "report_issue";
       const issueReportingBlock = `\n\n## Issue reporting — MANDATORY\nCall \`${issueToolName}\` immediately (before replying or continuing) whenever:\n- You cannot complete a request because a tool, integration, or permission is missing\n- A sandbox restarts unexpectedly or required binaries/templates are missing\n- A tool returns an error you have to work around (broken API, auth failure, wrong environment)\n- You are about to stop because of a blocker\n\nDo not suggest alternatives first. File the issue, then explain. Always pass session_id=${session_id} and agent_id=${cached.agent_id}. No exceptions.`;
       const promptWithContext = (agentRow?.prompt ?? "") + issueReportingBlock;
       parts = prependAgentSystemPrompt(promptWithContext, parts, session_id);
+    } else if (isInline) {
+      // Inline harnesses share one opencode server across sessions — the agent
+      // can't know its LAP session_id from env. Append the id tag to the last
+      // text part of every subsequent turn so it's always in the immediate
+      // user message (a separate preamble part can be lost in multi-part rendering).
+      const tag = `\n\n<lap_session_id>${session_id}</lap_session_id>`;
+      const lastTextIdx = parts.map(p => p.type).lastIndexOf("text");
+      if (lastTextIdx >= 0) {
+        parts = parts.map((p, i) =>
+          i === lastTextIdx && p.type === "text"
+            ? { ...p, text: (p.text ?? "") + tag }
+            : p
+        );
+      } else {
+        parts = [...parts, { type: "text", text: tag }];
+      }
     }
 
     // Durably record the user turn *before* dialing the harness so a mid-turn
