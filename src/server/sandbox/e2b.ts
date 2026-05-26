@@ -83,7 +83,7 @@ export class E2bProvider extends SandboxProvider {
 
     const sandbox = await Sandbox.create(this.template, {
       apiKey: this.apiKey,
-      timeoutMs: 24 * 60 * 60 * 1000,
+      timeoutMs: 60 * 60 * 1000, // E2B max is 1 hour; keepalive on execute resets it
       envs: { ...stubEnv, ...proxyEnv, ...vaultCaEnv },
     });
 

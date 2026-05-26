@@ -165,7 +165,7 @@ export const PATCH = wrap<RouteContext>(async (req, ctx) => {
   // recycling warm tasks here, a user shrinking the limit from 10 → 0
   // would still see 10 ranked rows in the next session if a warm pod gets
   // claimed. Cheap: warm pool reconciler refills in <2s.
-  if (body.preload_memory_limit !== undefined) {
+  if (body.preload_memory_limit !== undefined || body.env_vars !== undefined) {
     await invalidateWarmTasks(agent_id);
   }
   return Response.json(toApiAgent(updated));
