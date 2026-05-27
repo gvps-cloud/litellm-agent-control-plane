@@ -50,6 +50,7 @@ import {
   harnessCreateSession,
   harnessListMessages,
   harnessSendMessage,
+  isDeadSessionError,
   prependAgentSystemPrompt,
 } from "@/server/harness";
 import {
@@ -598,10 +599,13 @@ async function runInitialPrompt(
     const isFetchError =
       (err instanceof TypeError && err.message.includes("fetch")) ||
       reason === "fetch failed";
+    // Also recover on dead-session errors: opencode returns 200+empty when
+    // the harness_session_id is unknown after a pod restart.
+    const isRecoverable = isFetchError || isDeadSessionError(err);
 
-    if (isFetchError) {
+    if (isRecoverable) {
       console.log(
-        `[runInitialPrompt] fetch failed, attempting recovery... session_id=${session_id}`,
+        `[runInitialPrompt] recoverable error (${reason}), attempting recovery... session_id=${session_id}`,
       );
       try {
         // Re-resolve MCP servers so the replacement session has the same tool

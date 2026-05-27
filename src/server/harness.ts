@@ -62,8 +62,12 @@ export function isHardConnectFailure(err: unknown): boolean {
 // 404 + {"error":"not found"} from the harness means the harness_session_id
 // is unknown — happens when a NodePort is reused by a different pod after
 // the original pod dies. Treat it as dead so the user can /restart.
+// Also treat 200 + empty body as dead: opencode returns HTTP 200 with no
+// body when the session is not found (NotFoundError), which would otherwise
+// surface as "Unexpected end of JSON input" and bypass recovery entirely.
 export function isDeadSessionError(err: unknown): boolean {
   if (!(err instanceof HarnessHttpError)) return false;
+  if (err.status === 200 && (err.statusText === "empty response body" || err.statusText === "invalid JSON response body")) return true;
   if (err.status !== 404) return false;
   try {
     return (JSON.parse(err.body) as { error?: string }).error === "not found";
@@ -197,7 +201,18 @@ async function postJson(
     const text = await res.text().catch(() => "");
     throw new HarnessHttpError(res.status, res.statusText, text, url, "POST");
   }
-  return res.json();
+  // opencode returns HTTP 200 with an empty body when the session is not found
+  // (NotFoundError). Treat empty response as a dead-session signal so the
+  // caller's recovery logic can create a fresh session and replay.
+  const text = await res.text().catch(() => "");
+  if (!text.trim()) {
+    throw new HarnessHttpError(200, "empty response body", "", url, "POST");
+  }
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new HarnessHttpError(200, "invalid JSON response body", text.slice(0, 300), url, "POST");
+  }
 }
 
 export async function harnessCreateSession(
