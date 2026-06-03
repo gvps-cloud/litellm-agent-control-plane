@@ -12,24 +12,17 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import Link from "next/link";
 import { Button } from "@/ui/components/ui/button";
-import { Label } from "@/ui/components/ui/label";
 import { Textarea } from "@/ui/components/ui/textarea";
 import { AgentFormFields, DEFAULT_HARNESS_ID } from "@/ui/components/agent-form-fields";
 import { EnabledTools } from "@/ui/components/mcp-tools-picker";
 import {
-  PROJECT_REQUIRED_HARNESS_IDS,
-} from "@/ui/lib/constants";
-import {
   AgentTemplate,
   ApiError,
   McpAllowedTools,
-  ProjectConfig,
   createAgent,
   createSkill,
   getPreinstalledGithubRepo,
-  listProjects,
   listTemplates,
 } from "@/ui/lib/api";
 import { cn } from "@/ui/lib/utils";
@@ -45,16 +38,6 @@ function normalizeRepoUrl(repo: string | undefined): string | undefined {
     return `https://github.com/${trimmed}`;
   }
   return trimmed;
-}
-
-interface LocalProject {
-  id: string;
-  name: string;
-  description?: string;
-  repo_url?: string;
-  env_vars?: Record<string, string>;
-  allow_out?: string[];
-  deny_out?: string[];
 }
 
 export default function NewAgentPage() {
@@ -77,32 +60,6 @@ export default function NewAgentPage() {
   useEffect(() => {
     listTemplates().then(setTemplates).catch(() => {});
   }, []);
-
-  // Projects (repo + env var keys) from localStorage
-  const [projects, setProjects] = useState<LocalProject[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  // Multi-select for brain-inline harness
-  const [selectedProjects, setSelectedProjects] = useState<LocalProject[]>([]);
-
-  useEffect(() => {
-    listProjects()
-      .then((res) => setProjects(res.data.map((p) => ({
-        id: p.project_id,
-        name: p.name,
-        description: p.description ?? undefined,
-        repo_url: p.repo_url ?? undefined,
-        env_vars: p.env_vars,
-        allow_out: p.allow_out,
-        deny_out: p.deny_out,
-        files: p.files,
-      })))
-      )
-      .catch(() => { /* ignore */ });
-  }, []);
-
-  function applyProject(id: string | null) {
-    setSelectedProjectId(id === selectedProjectId ? null : id);
-  }
 
   function selectTemplate(id: string) {
     setSelectedTemplateId(id);
@@ -168,13 +125,8 @@ export default function NewAgentPage() {
       return `Name must be ${NAME_MAX} characters or fewer.`;
     }
     if (!model.trim()) return "Model is required.";
-    if (PROJECT_REQUIRED_HARNESS_IDS.has(harnessId) && selectedProjects.length === 0) {
-      return "Select at least one sandbox project for this harness.";
-    }
     return null;
   }
-
-  const projectRequired = PROJECT_REQUIRED_HARNESS_IDS.has(harnessId);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -224,14 +176,7 @@ export default function NewAgentPage() {
       for (const key of Object.keys(envVarsRecord)) {
         if (envVarHosts[key]?.length) finalEnvVarHosts[key] = envVarHosts[key];
       }
-      // Egress = per-secret hosts ∪ the project template's non-secret hosts, so
-      // a template's allow_out (e.g. a public endpoint the agent browses without
-      // auth) isn't dropped just because it isn't tied to a credential.
-      const projAllowOut =
-        projects.find((s) => s.id === selectedProjectId)?.allow_out ?? [];
-      const derivedAllowOut = [
-        ...new Set([...projAllowOut, ...Object.values(finalEnvVarHosts).flat()]),
-      ];
+      const derivedAllowOut = [...new Set(Object.values(finalEnvVarHosts).flat())];
 
       // If a template is selected and the user edited the skill panel, merge back.
       let finalPrompt = systemPrompt.trim() || undefined;
@@ -269,10 +214,7 @@ export default function NewAgentPage() {
         }
       }
 
-      const selectedProject = projects.find((s) => s.id === selectedProjectId);
-      const repoUrl = normalizeRepoUrl(
-        selectedProject?.repo_url || preinstalledRepo || undefined,
-      );
+      const repoUrl = normalizeRepoUrl(preinstalledRepo || undefined);
       const created = await createAgent({
         name: name.trim() || undefined,
         model: model.trim(),
@@ -286,20 +228,10 @@ export default function NewAgentPage() {
         env_vars: Object.keys(envVarsRecord).length > 0 ? envVarsRecord : undefined,
         env_var_hosts: Object.keys(finalEnvVarHosts).length > 0 ? finalEnvVarHosts : undefined,
         allow_out: derivedAllowOut,
-        deny_out: selectedProject?.deny_out,
         skill_ids: pickedSkillIds.length > 0 ? pickedSkillIds : undefined,
         // Preserve template provenance so the platform can detect version drift
         // and surface "sync available" when the template is later updated.
         template_id: selectedTemplate?.id ?? undefined,
-        projects: PROJECT_REQUIRED_HARNESS_IDS.has(harnessId) && selectedProjects.length > 0
-          ? selectedProjects.map((p): ProjectConfig => ({
-              id: p.id,
-              name: p.name,
-              description: p.description ?? "",
-              repo_url: p.repo_url,
-              branch: "main",
-            }))
-          : undefined,
       });
       router.push(`/agents/${created.id}`);
     } catch (err) {
@@ -387,67 +319,6 @@ export default function NewAgentPage() {
             </div>
           </section>
 
-              {/* Project picker — new-only */}
-              {projects.length > 0 && (
-                <section className="space-y-2">
-                  <p className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">Project</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Pre-fills repo URL and env var keys. Values stay empty.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {projects.map((t) => {
-                      const active = selectedProjectId === t.id;
-                      const keys = Object.keys(t.env_vars ?? {});
-                      return (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => applyProject(active ? null : t.id)}
-                          disabled={submitting}
-                          className={cn(
-                            "flex min-w-[160px] flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                            active
-                              ? "border-foreground/70 bg-accent/40"
-                              : "border-border bg-background/60 hover:bg-accent/30",
-                          )}
-                        >
-                          <span className="text-[13px] font-medium text-foreground">{t.name}</span>
-                          {t.repo_url && (
-                            <span className="font-mono text-[10px] text-muted-foreground">
-                              {t.repo_url.replace("https://github.com/", "")}
-                            </span>
-                          )}
-                          {keys.length > 0 && (
-                            <span className="font-mono text-[9px] text-muted-foreground">
-                              {keys.length} env var{keys.length !== 1 ? "s" : ""}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {(() => {
-                    const sel = projects.find((s) => s.id === selectedProjectId);
-                    const keys = Object.keys(sel?.env_vars ?? {});
-                    if (!sel || keys.length === 0) return null;
-                    return (
-                      <div className="rounded-lg border border-border bg-muted/20 px-3 py-2.5">
-                        <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                          Env vars in this template
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {keys.map((k) => (
-                            <span key={k} className="rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[11px] text-foreground">
-                              {k}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </section>
-              )}
-
             <section className="rounded-lg border bg-card/70 p-5 shadow-sm lg:p-6">
               <AgentFormFields
                 name={name} onNameChange={setName}
@@ -469,52 +340,6 @@ export default function NewAgentPage() {
                 disabled={submitting}
               />
             </section>
-
-              {/* Sandbox projects — inline brain harnesses only */}
-              {projectRequired && (
-                <section className="rounded-lg border bg-card/70 p-5 shadow-sm lg:p-6">
-                  <Label>Sandbox projects</Label>
-                  <p className="mt-1 text-[12px] text-muted-foreground">
-                    Inline brain harnesses need at least one sandbox project.
-                  </p>
-                  {projects.length > 0 ? (
-                    <div className="mt-3 divide-y rounded-lg border bg-background/50">
-                      {projects.map((p) => (
-                        <label key={p.id} className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-accent/30">
-                          <input
-                            type="checkbox"
-                            checked={selectedProjects.some((sp) => sp.id === p.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedProjects([...selectedProjects, p]);
-                              } else {
-                                setSelectedProjects(selectedProjects.filter((sp) => sp.id !== p.id));
-                              }
-                            }}
-                            className="rounded"
-                          />
-                          <span className="flex flex-col">
-                            <span className="text-[13px] font-medium">{p.name}</span>
-                            {p.repo_url && (
-                              <span className="font-mono text-[11px] text-muted-foreground">
-                                {p.repo_url.replace("https://github.com/", "")}
-                              </span>
-                            )}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-[12px] text-muted-foreground">
-                      No projects found.{" "}
-                      <Link href="/projects/new" className="underline underline-offset-2 hover:text-foreground">
-                        Create a project
-                      </Link>{" "}
-                      to add sandbox templates.
-                    </p>
-                  )}
-                </section>
-              )}
 
               {metaError ? (
                 <p className="font-mono text-xs text-muted-foreground">

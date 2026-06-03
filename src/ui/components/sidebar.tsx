@@ -3,9 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronDown, ChevronRight, FileText, LayoutTemplate, Plus, Settings } from "lucide-react";
-
-interface LocalProject { id: string; name: string; }
+import { ChevronDown, ChevronRight, FileText, Plus, Settings } from "lucide-react";
 
 import { AgentAvatar } from "@/ui/components/agent-avatar";
 import { ThemeToggle } from "@/ui/components/theme-toggle";
@@ -18,7 +16,6 @@ import {
   listSessions,
   listSkills,
 } from "@/ui/lib/api";
-import { PROJECTS_STORAGE_KEY } from "@/ui/lib/constants";
 
 const REPO_URL = "https://github.com/BerriAI/litellm-agent-platform";
 const POLL_INTERVAL_MS = 10000;
@@ -79,15 +76,7 @@ export function Sidebar() {
   const [agents, setAgents] = useState<AgentRow[]>([]);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [skills, setSkills] = useState<SkillRow[]>([]);
-  const [projects, setProjects] = useState<LocalProject[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(PROJECTS_STORAGE_KEY);
-      if (raw) setProjects(JSON.parse(raw) as LocalProject[]);
-    } catch { /* ignore */ }
-  }, []);
 
   // Track which agent the current route belongs to so we can auto-expand it.
   const activeAgentId = useMemo(() => {
@@ -472,44 +461,6 @@ export function Sidebar() {
           </ul>
         </div>
 
-        {/* Projects */}
-        <div className="mt-3">
-          <SectionHeader
-            label="Projects"
-            count={projects.length}
-            href="/projects"
-            active={pathname === "/projects"}
-          />
-          <ul className="space-y-px">
-            {projects.length === 0 ? (
-              <li className="px-2 py-1 text-[11px] text-muted-foreground">
-                No projects yet.
-              </li>
-            ) : (
-              projects.map((t) => {
-                const href = `/projects`;
-                const active = pathname === "/projects";
-                return (
-                  <li key={t.id}>
-                    <Link
-                      href={href}
-                      className={cn(
-                        "flex h-8 items-center gap-2 rounded-md px-2 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                        active
-                          ? "bg-sidebar-accent font-medium text-foreground"
-                          : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-                      )}
-                      title={t.name}
-                    >
-                      <LayoutTemplate className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                      <span className="min-w-0 flex-1 truncate">{t.name}</span>
-                    </Link>
-                  </li>
-                );
-              })
-            )}
-          </ul>
-        </div>
       </nav>
 
       {/* Sticky footer */}
