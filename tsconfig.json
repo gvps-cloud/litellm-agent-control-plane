@@ -18,6 +18,7 @@
         "name": "next"
       }
     ],
+    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     }
@@ -30,5 +31,13 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "harnesses", "vault", "src/open-harness-sdk"]
+  "exclude": [
+    "node_modules",
+    "harnesses",
+    "vault",
+    "cloud-vault",
+    "tests",
+    "playwright.config.ts",
+    "src/open-harness-sdk"
+  ]
 }
