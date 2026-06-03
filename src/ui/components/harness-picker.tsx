@@ -1,74 +1,51 @@
 "use client";
 
-import { Check } from "lucide-react";
-import { cn } from "@/ui/lib/utils";
+import { Check, ChevronDown } from "lucide-react";
+import Image from "next/image";
+import { useState } from "react";
 
-export type HarnessMode = "CHAT" | "TUI";
+import { cn } from "@/ui/lib/utils";
 
 export interface HarnessOption {
   id: string;
   label: string;
   description: string;
-  mode: HarnessMode;
+  model: string;
+  logo: string;
 }
 
 export const HARNESS_OPTIONS: HarnessOption[] = [
   {
-    id: "claude-code-brain-inline",
-    label: "claude-code-brain-inline",
-    description: "Brain runs on the platform — no sandbox warmup. Claude provisions compute on demand when it needs to run code.",
-    mode: "CHAT",
-  },
-  {
-    id: "opencode-brain-inline",
-    label: "opencode-brain-inline",
-    description: "opencode running inline on the platform — no sandbox warmup. Multi-provider via LiteLLM; provisions compute on demand when it needs to run code.",
-    mode: "CHAT",
-  },
-  {
-    id: "opencode",
-    label: "opencode",
-    description: "Multi-provider via LiteLLM. Default — used by every existing agent.",
-    mode: "CHAT",
-  },
-  {
-    id: "claude-agent-sdk",
-    label: "claude-agent-sdk",
-    description: "Anthropic's first-party agent loop. Fewer harness bugs; SDK persists session state for free.",
-    mode: "CHAT",
-  },
-  {
     id: "claude-code",
-    label: "claude-code",
-    description: "Claude Code CLI, running in the sandbox. Opens as a live TUI in your browser via xterm.js.",
-    mode: "TUI",
+    label: "Claude Code",
+    description: "Anthropic's terminal coding agent.",
+    model: "anthropic/claude-sonnet-4-5",
+    logo: "/brands/claude-code.svg",
   },
   {
     id: "codex",
-    label: "codex",
-    description: "OpenAI Codex CLI, running in the sandbox. Opens as a live TUI in your browser via xterm.js.",
-    mode: "TUI",
+    label: "Codex",
+    description: "OpenAI Codex CLI for coding tasks.",
+    model: "openai/gpt-5.1-codex",
+    logo: "/brands/codex.svg",
   },
   {
-    id: "hermes",
-    label: "hermes",
-    description: "Nous Research Hermes Agent, running in the sandbox. Self-improving CLI with persistent memory + skills. Opens as a live TUI via xterm.js.",
-    mode: "TUI",
+    id: "pi-ai",
+    label: "Pi AI",
+    description: "Pi coding agent via LiteLLM.",
+    model: "openai/gpt-4o",
+    logo: "/brands/pi-ai.svg",
   },
   {
-    id: "gemini",
-    label: "gemini",
-    description: "Google Gemini CLI, running in the sandbox. Routes through the LiteLLM gateway via the /gemini passthrough. Opens as a live TUI via xterm.js.",
-    mode: "TUI",
+    id: "opencode",
+    label: "OpenCode",
+    description: "Open source coding agent harness.",
+    model: "anthropic/claude-haiku-4-5",
+    logo: "/brands/opencode.svg",
   },
 ];
 
 export const DEFAULT_HARNESS_ID = "opencode";
-
-const MODE_CLASS: Record<HarnessMode, string> = {
-  CHAT: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800",
-  TUI:  "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800",
-};
 
 interface HarnessPickerProps {
   value: string;
@@ -77,54 +54,96 @@ interface HarnessPickerProps {
 }
 
 export function HarnessPicker({ value, onChange, disabled }: HarnessPickerProps) {
+  const [open, setOpen] = useState(false);
+  const selected = HARNESS_OPTIONS.find((opt) => opt.id === value) ?? HARNESS_OPTIONS[0];
+
+  function selectHarness(id: string) {
+    onChange(id);
+    setOpen(false);
+  }
+
   return (
-    <div className="rounded-lg border bg-card">
-      <ul role="radiogroup" aria-label="Harness" className="divide-y">
-        {HARNESS_OPTIONS.map((opt) => {
-          const selected = opt.id === value;
-          return (
-            <li key={opt.id}>
+    <div className="relative">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => setOpen((current) => !current)}
+        disabled={disabled}
+        className="flex h-12 w-full items-center gap-3 rounded-lg border bg-background px-3 text-left shadow-sm outline-none transition hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60"
+      >
+        <HarnessLogo option={selected} className="size-7" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium">{selected.label}</span>
+          <span className="block truncate font-mono text-[11px] text-muted-foreground">
+            {selected.model}
+          </span>
+        </span>
+        <ChevronDown
+          className={cn(
+            "size-4 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-180",
+          )}
+        />
+      </button>
+
+      {open ? (
+        <div
+          role="listbox"
+          aria-label="Harness"
+          className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-xl border bg-card p-1.5 shadow-xl"
+        >
+          {HARNESS_OPTIONS.map((opt) => {
+            const active = opt.id === value;
+            return (
               <button
+                key={opt.id}
                 type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => onChange(opt.id)}
-                disabled={disabled}
+                role="option"
+                aria-selected={active}
+                onClick={() => selectHarness(opt.id)}
                 className={cn(
-                  "flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                  selected && "bg-accent/30",
+                  "flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition-colors",
+                  active ? "bg-muted text-foreground" : "hover:bg-muted/60",
                 )}
               >
-                <span
-                  className={cn(
-                    "mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border transition-colors",
-                    selected
-                      ? "border-foreground bg-foreground text-background"
-                      : "border-border bg-transparent",
-                  )}
-                  aria-hidden
-                >
-                  {selected ? <Check className="size-3" /> : null}
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border bg-background shadow-sm">
+                  <HarnessLogo option={opt} className="size-5" />
                 </span>
-                <span className="flex min-w-0 flex-1 items-start gap-2">
-                  <span className="flex flex-col gap-0.5">
-                    <span className="font-mono text-[13px] text-foreground">{opt.label}</span>
-                    <span className="text-[11px] text-muted-foreground">{opt.description}</span>
-                  </span>
-                  <span
-                    className={cn(
-                      "mt-0.5 shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider",
-                      MODE_CLASS[opt.mode],
-                    )}
-                  >
-                    {opt.mode}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">{opt.label}</span>
+                  <span className="block truncate text-xs font-normal text-muted-foreground">
+                    {opt.description}
                   </span>
                 </span>
+                {active ? <Check className="size-4 shrink-0" /> : null}
               </button>
-            </li>
-          );
-        })}
-      </ul>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function HarnessLogo({
+  option,
+  className,
+}: {
+  option: HarnessOption;
+  className?: string;
+}) {
+  return (
+    <Image
+      src={option.logo}
+      alt={`${option.label} logo`}
+      width={28}
+      height={28}
+      className={cn(
+        "shrink-0 object-contain",
+        option.id === "opencode" && "dark:invert",
+        className,
+      )}
+    />
   );
 }
