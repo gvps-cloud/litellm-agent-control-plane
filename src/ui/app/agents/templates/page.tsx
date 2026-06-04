@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -16,11 +16,18 @@ import {
 
 import { Badge } from "@/ui/components/ui/badge";
 import { Button } from "@/ui/components/ui/button";
+import { AgentFormFields, DEFAULT_HARNESS_ID } from "@/ui/components/agent-form-fields";
 import { HarnessIdentity, getHarnessOption } from "@/ui/components/harness-picker";
 import { Input } from "@/ui/components/ui/input";
 import { Label } from "@/ui/components/ui/label";
-import { Textarea } from "@/ui/components/ui/textarea";
-import { AgentTemplate, listTemplates } from "@/ui/lib/api";
+import { EnabledTools } from "@/ui/components/mcp-tools-picker";
+import {
+  AgentTemplate,
+  ApiError,
+  McpAllowedTools,
+  listTemplates,
+  publishTemplate,
+} from "@/ui/lib/api";
 import { cn } from "@/ui/lib/utils";
 
 const INTERNAL_TEMPLATES_STORAGE = "lap_internal_agent_templates";
@@ -32,9 +39,17 @@ interface TemplateSpec {
   harness: string;
   model: string;
   system: string;
+  pfp_url?: string | null;
   mcp_servers: string[];
+  mcp_allowed_tools?: McpAllowedTools[];
+  env_vars: Record<string, string>;
+  env_var_hosts: Record<string, string[]>;
   tools: Array<{ type: string }>;
   skills: string[];
+  skill_ids: string[];
+  skill_name?: string;
+  skill_description?: string;
+  skill?: string;
   source: "global" | "internal";
 }
 
@@ -42,13 +57,20 @@ const BLANK_TEMPLATE: TemplateSpec = {
   id: "blank-agent-config",
   name: "Blank agent config",
   description: "A blank starting point with the core toolset.",
-  harness: "codex",
+  harness: DEFAULT_HARNESS_ID,
   model: "claude-sonnet-4-6",
   system:
     "You are a general-purpose agent that can research, write code, run commands, and use connected tools to complete the user's task end to end.",
   mcp_servers: [],
+  mcp_allowed_tools: [],
+  env_vars: {},
+  env_var_hosts: {},
   tools: [{ type: "agent_toolset_20260401" }],
   skills: [],
+  skill_ids: [],
+  skill_name: "",
+  skill_description: "",
+  skill: "",
   source: "internal",
 };
 
@@ -62,8 +84,12 @@ const FALLBACK_TEMPLATES: TemplateSpec[] = [
     model: "anthropic/claude-sonnet-4-6",
     system: "You are a coding agent. You can write code, debug issues, and prepare PRs.",
     mcp_servers: [],
+    mcp_allowed_tools: [],
+    env_vars: {},
+    env_var_hosts: {},
     tools: [{ type: "agent_toolset_20260401" }],
     skills: ["coding-agent"],
+    skill_ids: [],
     source: "global",
   },
   {
@@ -74,8 +100,12 @@ const FALLBACK_TEMPLATES: TemplateSpec[] = [
     model: "anthropic/claude-sonnet-4-6",
     system: "You are a security agent. Scan pull requests and report vulnerabilities by severity.",
     mcp_servers: [],
+    mcp_allowed_tools: [],
+    env_vars: {},
+    env_var_hosts: {},
     tools: [{ type: "agent_toolset_20260401" }],
     skills: ["reviewing-security"],
+    skill_ids: [],
     source: "global",
   },
 ];
@@ -88,17 +118,6 @@ function slugify(value: string): string {
     .slice(0, 80);
 }
 
-function parseCsv(value: string): string[] {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function toCsv(value: string[]): string {
-  return value.join(", ");
-}
-
 function toTemplate(template: AgentTemplate): TemplateSpec {
   return {
     id: template.id,
@@ -107,12 +126,20 @@ function toTemplate(template: AgentTemplate): TemplateSpec {
     harness: template.harness_id,
     model: template.model,
     system: template.prompt,
-    mcp_servers: [],
+    pfp_url: template.pfp_url ?? null,
+    mcp_servers: template.mcp_servers ?? [],
+    mcp_allowed_tools: template.mcp_allowed_tools ?? [],
+    env_vars: template.env_vars,
+    env_var_hosts: template.env_var_hosts ?? {},
     tools:
       template.tools.length > 0
         ? template.tools.map((tool) => ({ type: tool }))
         : [{ type: "agent_toolset_20260401" }],
     skills: template.skill_name ? [template.skill_name] : [],
+    skill_ids: template.skill_ids ?? [],
+    skill_name: template.skill_name,
+    skill_description: "",
+    skill: template.skill,
     source: "global",
   };
 }
@@ -143,9 +170,21 @@ function toJson(spec: TemplateSpec): string {
       harness: spec.harness,
       model: spec.model,
       system: spec.system,
+      pfp_url: spec.pfp_url ?? undefined,
       mcp_servers: spec.mcp_servers,
+      mcp_allowed_tools: spec.mcp_allowed_tools?.length ? spec.mcp_allowed_tools : undefined,
+      env_vars: spec.env_vars,
+      env_var_hosts: spec.env_var_hosts,
       tools: spec.tools,
       skills: spec.skills,
+      skill_ids: spec.skill_ids,
+      skill: spec.skill
+        ? {
+            name: spec.skill_name,
+            description: spec.skill_description,
+            content: spec.skill,
+          }
+        : undefined,
     },
     null,
     2,
@@ -164,13 +203,69 @@ function toYaml(spec: TemplateSpec): string {
     `harness: ${yamlValue(spec.harness)}`,
     `model: ${yamlValue(spec.model)}`,
     `system: ${yamlValue(spec.system)}`,
+    `pfp_url: ${yamlValue(spec.pfp_url ?? "")}`,
     "mcp_servers:",
     ...(spec.mcp_servers.length ? spec.mcp_servers.map((item) => `  - ${yamlValue(item)}`) : ["  []"]),
+    "mcp_allowed_tools:",
+    ...(spec.mcp_allowed_tools?.length
+      ? spec.mcp_allowed_tools.flatMap((item) => [
+          `  - server_id: ${yamlValue(item.server_id)}`,
+          "    tools:",
+          ...item.tools.map((tool) => `      - ${yamlValue(tool)}`),
+        ])
+      : ["  []"]),
+    "env_vars:",
+    ...(Object.entries(spec.env_vars).length
+      ? Object.entries(spec.env_vars).map(([key, value]) => `  ${key}: ${yamlValue(value)}`)
+      : ["  {}"]),
+    "env_var_hosts:",
+    ...(Object.entries(spec.env_var_hosts).length
+      ? Object.entries(spec.env_var_hosts).flatMap(([key, hosts]) => [
+          `  ${key}:`,
+          ...hosts.map((host) => `    - ${yamlValue(host)}`),
+        ])
+      : ["  {}"]),
     "tools:",
     ...spec.tools.map((tool) => `  - type: ${yamlValue(tool.type)}`),
     "skills:",
     ...(spec.skills.length ? spec.skills.map((item) => `  - ${yamlValue(item)}`) : ["  []"]),
+    "skill_ids:",
+    ...(spec.skill_ids.length ? spec.skill_ids.map((item) => `  - ${yamlValue(item)}`) : ["  []"]),
+    "inline_skill:",
+    ...(spec.skill
+      ? [
+          `  name: ${yamlValue(spec.skill_name ?? "")}`,
+          `  description: ${yamlValue(spec.skill_description ?? "")}`,
+          `  content: ${yamlValue(spec.skill)}`,
+        ]
+      : ["  null"]),
   ].join("\n");
+}
+
+function envPairsFromRecord(record: Record<string, string>): [string, string][] {
+  const entries = Object.entries(record);
+  return entries.length > 0 ? entries : [["", ""]];
+}
+
+function recordFromEnvPairs(pairs: [string, string][]): Record<string, string> {
+  const record: Record<string, string> = {};
+  for (const [rawKey, value] of pairs) {
+    const key = rawKey.trim();
+    if (key) record[key] = value;
+  }
+  return record;
+}
+
+function enabledToolsFromTemplate(template: TemplateSpec): EnabledTools {
+  const enabled = new Map<string, Set<string>>();
+  const allowedByServer = new Map(
+    (template.mcp_allowed_tools ?? []).map((item) => [item.server_id, item.tools]),
+  );
+  for (const serverId of template.mcp_servers) {
+    const tools = allowedByServer.get(serverId);
+    if (tools?.length) enabled.set(serverId, new Set(tools));
+  }
+  return enabled;
 }
 
 type DrawerMode = "create" | "edit" | null;
@@ -181,12 +276,22 @@ export default function AgentTemplatesPage() {
   const [internalTemplates, setInternalTemplates] = useState<TemplateSpec[]>([]);
   const [drawerMode, setDrawerMode] = useState<DrawerMode>(null);
   const [editing, setEditing] = useState<TemplateSpec>(BLANK_TEMPLATE);
-  const [mcpServers, setMcpServers] = useState("");
-  const [skills, setSkills] = useState("");
-  const [toolType, setToolType] = useState("agent_toolset_20260401");
+  const [pfpUrl, setPfpUrl] = useState<string | null>(null);
+  const [envVars, setEnvVars] = useState<[string, string][]>([["", ""]]);
+  const [envVarHosts, setEnvVarHosts] = useState<Record<string, string[]>>({});
+  const [enabledTools, setEnabledTools] = useState<EnabledTools>(new Map());
+  const [, setMcpToolTotals] = useState<Map<string, number>>(new Map());
+  const [pickedSkillIds, setPickedSkillIds] = useState<string[]>([]);
+  const [skillName, setSkillName] = useState("");
+  const [skillDesc, setSkillDesc] = useState("");
+  const [skillInstructions, setSkillInstructions] = useState("");
+  const [skillMode, setSkillMode] = useState<null | "write" | "pick">(null);
+  const [skillSaveToLibrary, setSkillSaveToLibrary] = useState(true);
   const [format, setFormat] = useState<"json" | "yaml">("json");
   const [showSpec, setShowSpec] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [publishUrl, setPublishUrl] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
@@ -215,28 +320,79 @@ export default function AgentTemplatesPage() {
       template.source,
     ].some((value) => value.toLowerCase().includes(q)));
   }, [search, templates]);
-  const preview = format === "json" ? toJson(editing) : toYaml(editing);
   const thClass = "px-4 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground select-none";
 
+  function hydrateForm(template: TemplateSpec) {
+    setPfpUrl(template.pfp_url ?? null);
+    setEnvVars(envPairsFromRecord(template.env_vars));
+    setEnvVarHosts(template.env_var_hosts);
+    setEnabledTools(enabledToolsFromTemplate(template));
+    setPickedSkillIds(template.skill_ids ?? []);
+    setSkillName(template.skill_name ?? "");
+    setSkillDesc(template.skill_description ?? "");
+    setSkillInstructions(template.skill ?? "");
+    setSkillMode(template.skill ? "write" : template.skill_ids.length > 0 ? "pick" : null);
+    setSkillSaveToLibrary(false);
+    setPublishUrl(null);
+  }
+
+  function specFromForm(base: TemplateSpec = editing): TemplateSpec {
+    const envVarsRecord = recordFromEnvPairs(envVars);
+    const finalEnvVarHosts: Record<string, string[]> = {};
+    for (const key of Object.keys(envVarsRecord)) {
+      if (envVarHosts[key]?.length) finalEnvVarHosts[key] = envVarHosts[key];
+    }
+
+    const mcpServers: string[] = [];
+    const mcpAllowedTools: McpAllowedTools[] = [];
+    for (const [serverId, toolSet] of enabledTools.entries()) {
+      if (toolSet.size === 0) continue;
+      mcpServers.push(serverId);
+      mcpAllowedTools.push({
+        server_id: serverId,
+        tools: Array.from(toolSet).sort(),
+      });
+    }
+
+    const inlineSkill = skillInstructions.trim();
+    const inlineSkillName = skillName.trim();
+    const skillLabels = [
+      ...pickedSkillIds,
+      ...(inlineSkill && inlineSkillName ? [inlineSkillName] : []),
+    ];
+
+    return {
+      ...base,
+      pfp_url: pfpUrl,
+      env_vars: envVarsRecord,
+      env_var_hosts: finalEnvVarHosts,
+      mcp_servers: mcpServers,
+      mcp_allowed_tools: mcpAllowedTools,
+      skills: [...new Set(skillLabels)],
+      skill_ids: pickedSkillIds,
+      skill_name: inlineSkill ? inlineSkillName : "",
+      skill_description: inlineSkill ? skillDesc.trim() : "",
+      skill: inlineSkill,
+    };
+  }
+
   function openCreate() {
-    setEditing({ ...BLANK_TEMPLATE, id: "new-agent-template", name: "New agent template" });
-    setMcpServers("");
-    setSkills("");
-    setToolType("agent_toolset_20260401");
+    const next = { ...BLANK_TEMPLATE, id: "new-agent-template", name: "New agent template" };
+    setEditing(next);
+    hydrateForm(next);
     setShowSpec(false);
     setDrawerMode("create");
     setNotice(null);
   }
 
   function openEdit(template: TemplateSpec) {
-    setEditing({
+    const next = {
       ...template,
       id: template.source === "global" ? `${template.id}-copy` : template.id,
       source: "internal",
-    });
-    setMcpServers(toCsv(template.mcp_servers));
-    setSkills(toCsv(template.skills));
-    setToolType(template.tools[0]?.type ?? "agent_toolset_20260401");
+    } satisfies TemplateSpec;
+    setEditing(next);
+    hydrateForm(next);
     setShowSpec(false);
     setDrawerMode("edit");
     setNotice(template.source === "global" ? "Editing a global template saves an internal copy." : null);
@@ -259,29 +415,10 @@ export default function AgentTemplatesPage() {
     setNotice(null);
   }
 
-  function handleMcpChange(e: ChangeEvent<HTMLInputElement>) {
-    setMcpServers(e.target.value);
-    updateEditing({ mcp_servers: parseCsv(e.target.value) });
-  }
-
-  function handleSkillsChange(e: ChangeEvent<HTMLInputElement>) {
-    setSkills(e.target.value);
-    updateEditing({ skills: parseCsv(e.target.value) });
-  }
-
-  function handleToolChange(e: ChangeEvent<HTMLInputElement>) {
-    const value = e.target.value;
-    setToolType(value);
-    updateEditing({ tools: [{ type: value || "agent_toolset_20260401" }] });
-  }
-
   function saveInternal() {
     const normalized: TemplateSpec = {
-      ...editing,
+      ...specFromForm(editing),
       id: editing.id || slugify(editing.name) || `template-${Date.now()}`,
-      mcp_servers: parseCsv(mcpServers),
-      skills: parseCsv(skills),
-      tools: [{ type: toolType.trim() || "agent_toolset_20260401" }],
       source: "internal",
     };
     const next = [
@@ -304,20 +441,52 @@ export default function AgentTemplatesPage() {
     setNotice("Deleted internal template.");
   }
 
-  function publishGlobally(template: TemplateSpec) {
-    setEditing(template);
-    setMcpServers(toCsv(template.mcp_servers));
-    setSkills(toCsv(template.skills));
-    setToolType(template.tools[0]?.type ?? "agent_toolset_20260401");
+  async function publishGlobally(template: TemplateSpec) {
+    const next = template.id === editing.id ? specFromForm(template) : template;
+    setEditing(next);
+    hydrateForm(next);
     setDrawerMode("edit");
     setShowSpec(true);
-    setNotice("Publish globally prepares a PR to add this template to LAP's shared JSON catalog.");
+    setPublishing(true);
+    setNotice("Creating PR...");
+    setPublishUrl(null);
+    try {
+      const result = await publishTemplate({
+        id: next.id,
+        name: next.name,
+        description: next.description,
+        icon: "🤖",
+        tags: [],
+        harness_id: next.harness,
+        model: next.model,
+        prompt: next.system,
+        tools: next.tools.map((tool) => tool.type).filter(Boolean),
+        mcp_servers: next.mcp_servers,
+        mcp_allowed_tools: next.mcp_allowed_tools ?? [],
+        env_vars: next.env_vars,
+        env_var_hosts: next.env_var_hosts,
+        skill_ids: next.skill_ids,
+        skill_name: next.skill_name,
+        skill: next.skill,
+        pfp_url: next.pfp_url ?? null,
+      });
+      setPublishUrl(result.pull_request_url);
+      setNotice(`PR opened for ${result.template_id}.`);
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : (error as Error).message;
+      setNotice(`Publish failed: ${message}`);
+    } finally {
+      setPublishing(false);
+    }
   }
 
   function copyPreview() {
     navigator.clipboard.writeText(preview).catch(() => {});
     setNotice(`${format.toUpperCase()} copied.`);
   }
+
+  const livePreview = drawerMode ? specFromForm(editing) : editing;
+  const preview = format === "json" ? toJson(livePreview) : toYaml(livePreview);
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-background">
@@ -411,7 +580,13 @@ export default function AgentTemplatesPage() {
                         <Button variant="ghost" size="icon-sm" onClick={() => openEdit(template)} aria-label={`Edit ${template.name}`}>
                           <Pencil className="size-4" />
                         </Button>
-                        <Button variant="ghost" size="icon-sm" onClick={() => publishGlobally(template)} aria-label={`Publish ${template.name}`}>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => void publishGlobally(template)}
+                          disabled={publishing}
+                          aria-label={`Publish ${template.name}`}
+                        >
                           <GitPullRequest className="size-4" />
                         </Button>
                         <Button
@@ -434,7 +609,7 @@ export default function AgentTemplatesPage() {
       </main>
 
       {drawerMode ? (
-        <aside className="fixed bottom-0 right-0 top-0 z-30 flex w-[min(760px,calc(100vw-240px))] min-w-[340px] flex-col border-l bg-background shadow-2xl">
+        <aside className="fixed bottom-0 right-0 top-0 z-30 flex w-[min(920px,calc(100vw-240px))] min-w-[340px] flex-col border-l bg-background shadow-2xl">
           <div className="flex h-14 items-center justify-between border-b px-5">
             <div className="min-w-0">
               <div className="truncate text-[15px] font-medium">
@@ -482,90 +657,49 @@ export default function AgentTemplatesPage() {
             </>
           ) : (
             <div className="min-h-0 flex-1 overflow-auto px-5 py-5">
-              <div className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="template-name">Name</Label>
-                    <Input
-                      id="template-name"
-                      value={editing.name}
-                      onChange={(e) => updateEditing({ name: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="template-model">Model</Label>
-                    <Input
-                      id="template-model"
-                      value={editing.model}
-                      onChange={(e) => updateEditing({ model: e.target.value })}
-                      className="font-mono"
-                    />
-                  </div>
-                </div>
+              <div className="space-y-5">
                 <div className="space-y-1.5">
                   <Label htmlFor="template-description">Description</Label>
                   <Input
                     id="template-description"
                     value={editing.description}
                     onChange={(e) => updateEditing({ description: e.target.value })}
+                    placeholder="What agents built from this template are for"
                   />
                 </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="template-harness">Harness</Label>
-                    <select
-                      id="template-harness"
-                      value={editing.harness}
-                      onChange={(e) => updateEditing({ harness: e.target.value })}
-                      className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                    >
-                      <option value="codex">codex</option>
-                      <option value="claude-agent-sdk">claude-agent-sdk</option>
-                      <option value="opencode">opencode</option>
-                      <option value="brain-inline">brain-inline</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="template-tool">Toolset</Label>
-                    <Input
-                      id="template-tool"
-                      value={toolType}
-                      onChange={handleToolChange}
-                      className="font-mono"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="template-system">System</Label>
-                  <Textarea
-                    id="template-system"
-                    value={editing.system}
-                    onChange={(e) => updateEditing({ system: e.target.value })}
-                    className="min-h-[180px] font-mono text-[12px]"
-                  />
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="template-mcp">MCP servers</Label>
-                    <Input
-                      id="template-mcp"
-                      value={mcpServers}
-                      onChange={handleMcpChange}
-                      placeholder="github, slack"
-                      className="font-mono"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="template-skills">Skills</Label>
-                    <Input
-                      id="template-skills"
-                      value={skills}
-                      onChange={handleSkillsChange}
-                      placeholder="review, docs"
-                      className="font-mono"
-                    />
-                  </div>
-                </div>
+                <AgentFormFields
+                  name={editing.name}
+                  onNameChange={(value) => updateEditing({ name: value })}
+                  pfpUrl={pfpUrl}
+                  onPfpUrlChange={setPfpUrl}
+                  harnessId={editing.harness}
+                  onHarnessIdChange={(value) => updateEditing({ harness: value })}
+                  model={editing.model}
+                  onModelChange={(value) => updateEditing({ model: value })}
+                  systemPrompt={editing.system}
+                  onSystemPromptChange={(value) => updateEditing({ system: value })}
+                  pickedSkillIds={pickedSkillIds}
+                  onPickedSkillIdsChange={setPickedSkillIds}
+                  skillName={skillName}
+                  onSkillNameChange={setSkillName}
+                  skillDesc={skillDesc}
+                  onSkillDescChange={setSkillDesc}
+                  skillInstructions={skillInstructions}
+                  onSkillInstructionsChange={setSkillInstructions}
+                  skillMode={skillMode}
+                  onSkillModeChange={setSkillMode}
+                  skillSaveToLibrary={skillSaveToLibrary}
+                  onSkillSaveToLibraryChange={setSkillSaveToLibrary}
+                  envVars={envVars}
+                  onEnvVarsChange={setEnvVars}
+                  envVarHosts={envVarHosts}
+                  onEnvVarHostsChange={setEnvVarHosts}
+                  enabledTools={enabledTools}
+                  onEnabledToolsChange={(value) =>
+                    setEnabledTools((prev) => typeof value === "function" ? value(prev) : value)
+                  }
+                  onMcpToolTotals={setMcpToolTotals}
+                />
               </div>
             </div>
           )}
@@ -573,11 +707,29 @@ export default function AgentTemplatesPage() {
           <div className="border-t px-5 py-3">
             <div className="mb-2 rounded-lg border bg-muted/25 px-3 py-2 text-[12px] text-muted-foreground">
               <strong className="font-medium text-foreground">Save internally</strong> stores this in the workspace.{" "}
-              <strong className="font-medium text-foreground">Publish globally</strong> prepares a PR for the shared JSON catalog.
+              <strong className="font-medium text-foreground">Publish globally</strong> opens a PR against the shared JSON catalog.
+              {publishUrl ? (
+                <>
+                  {" "}
+                  <a
+                    href={publishUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium text-foreground underline underline-offset-2"
+                  >
+                    View PR
+                  </a>
+                </>
+              ) : null}
             </div>
             <div className="flex items-center justify-end gap-2">
-              <Button variant="outline" onClick={() => publishGlobally(editing)}>
-                <GitPullRequest className="size-4" /> Publish globally
+              <Button
+                variant="outline"
+                onClick={() => void publishGlobally(editing)}
+                disabled={publishing}
+              >
+                <GitPullRequest className="size-4" />
+                {publishing ? "Publishing..." : "Publish globally"}
               </Button>
               <Button onClick={saveInternal}>Save internally</Button>
             </div>
