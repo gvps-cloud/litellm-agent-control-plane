@@ -4,17 +4,12 @@ Self-hosted UI for creating and running agents on any agent runtime [Claude Mana
 
 <img width="2200" height="1245" alt="LiteLLM Agent Platform dashboard" src="https://github.com/user-attachments/assets/04333758-829c-4b19-bde3-23ade37bb9f1" />
 
-## Why we built this
-
-Agent runtimes don't come with a UI you can hand to your team:
-
-- On **Bedrock AgentCore**, you have to build your own UI before anyone can create or run an agent.
-- With **Anthropic managed agents**, the only UI is the Anthropic developer console, and you don't want every employee in there.
-
 LiteLLM Agent Platform sits on top of any runtime. Pick a runtime, create an agent, give your team one UI.
-
-It also manages:
-
+ 
+It manages:
+ 
+- **Unified API across runtimes** - one API to create and run agents, regardless of the runtime underneath
+- **Access** - developers create and run agents here, no Bedrock or Anthropic console access required
 - **Session management** - persistent agent sessions across runs
 - **CRON schedules** - run agents on a schedule
 - **Memory** - agents remember context across sessions
