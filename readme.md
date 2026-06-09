@@ -23,10 +23,11 @@ It manages:
 Prerequisite: Docker Desktop.
 
 ```bash
-git clone https://github.com/LiteLLM-Labs/litellm-agent-platform
-cd litellm-agent-platform
-
-docker build -t litellm-agent-platform .
+wget -O Dockerfile \
+  https://raw.githubusercontent.com/LiteLLM-Labs/litellm-agent-platform/main/Dockerfile
+docker build -t litellm-agent-platform \
+  -f Dockerfile \
+  https://github.com/LiteLLM-Labs/litellm-agent-platform.git#main
 DATABASE_URL=postgres://user:password@host.docker.internal:5432/litellm_agents
 docker run --rm -p 4000:4000 \
   -e LITELLM_MASTER_KEY=sk-local \
