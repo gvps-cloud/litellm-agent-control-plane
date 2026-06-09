@@ -16,48 +16,17 @@ LiteLLM Agent Platform manages:
 
 ### Make an agent in the UI
 
-Select a harness, attach your tools, set a system prompt, and deploy.
 
 <img width="2200" height="1439" alt="Xnapper-2026-06-09-15 34 30" src="https://github.com/user-attachments/assets/d2083454-b7c1-4337-b2c2-4c4ba99991b6" />
 
-1. **Select a harness.** Claude Code, Codex, Hermes, or OpenCode.
-2. **Set it up.** Attach your tools and a system prompt. Your MCP servers and keys are already there from when you signed in.
-3. **Deploy it.** One click. Then start running and managing agents from the UI or an API.
+### Select Tools and skills to conenct to your agent 
 
-> _[ screenshot: set up the agent ]_
+<img width="1870" height="1573" alt="Xnapper-2026-06-09-15 36 53" src="https://github.com/user-attachments/assets/efd59a4e-dcc7-487a-923b-005ac44b44b0" />
 
-> _[ screenshot: deploy and run ]_
+### USe your agent
+Select your agent and the runtime you want to run it on 
 
-### Your tools are already connected
-
-Add a key to the platform once. When you sign in, your GitHub and AWS MCPs are already there. You do not add them again. The agent just uses the keys.
-
-## Usage: Create an Agent API
-
-Everything you can make in the UI you can make over the API.
-
-### Create an agent
-
-```bash
-curl http://localhost:4000/agents -X POST \
-  -H "Authorization: Bearer $LITELLM_KEY" \
-  -d '{
-    "name": "ci-fixer",
-    "harness": "claude-code",
-    "model": "anthropic/claude-sonnet-4-5",
-    "system_prompt": "You monitor CI and fix failing checks.",
-    "tools": ["github", "aws"]
-  }'
-```
-
-### Run the agent
-
-```bash
-curl http://localhost:4000/agents/ci-fixer/runs -X POST \
-  -H "Authorization: Bearer $LITELLM_KEY" \
-  -d '{ "input": "Fix the failing CI check on PR #418" }'
-```
-
+<img width="2200" height="1570" alt="Xnapper-2026-06-09-15 37 34" src="https://github.com/user-attachments/assets/be9cfd8c-4475-4309-bed0-4edcd7dd1de1" />
 
 ## Supported Harnesses
 
