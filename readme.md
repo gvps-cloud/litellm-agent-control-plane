@@ -1,6 +1,6 @@
 # LiteLLM Agent Platform
 
-Self-hosted Agent Building UI - Build agents on top of OpenCode, Hermes, Claude
+Self-hosted agent builder - Build agents on top of OpenCode, Hermes, Claude
 Managed Agents, Cursor Agents API, DeepAgents.
 
 ![LiteLLM Agent Platform dashboard](https://github.com/user-attachments/assets/04333758-829c-4b19-bde3-23ade37bb9f1)
