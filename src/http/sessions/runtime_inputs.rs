@@ -185,49 +185,30 @@ pub fn integration_mcp_toolsets(config: &Value) -> Vec<Value> {
                             .and_then(Value::as_str)
                             .is_some_and(|name| server_names.contains(name))
                 })
-                .cloned()
+                .map(normalize_integration_mcp_toolset)
                 .collect()
         })
         .unwrap_or_default()
 }
 
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use crate::db::managed_agents::registry::schema::ManagedAgentRow;
-
-    use super::session_metadata;
-
-    #[test]
-    fn session_metadata_truncates_long_prompt_values() {
-        let agent = ManagedAgentRow {
-            id: "agent_1".to_owned(),
-            name: "Agent".to_owned(),
-            model: "claude-sonnet-4-6".to_owned(),
-            system: String::new(),
-            tools: json!([]),
-            cadence: None,
-            interval_seconds: None,
-            session_id: String::new(),
-            loop_id: None,
-            created_at: 0,
-            prompt: None,
-            cron: None,
-            timezone: "UTC".to_owned(),
-            vault_keys: json!([]),
-            setup_commands: json!([]),
-            max_runtime_minutes: 30,
-            on_failure: "notify".to_owned(),
-            config: json!({}),
-            owner_id: Some("owner".to_owned()),
-            status: "active".to_owned(),
-            description: None,
-            harness: "claude-code".to_owned(),
-            skill_ids: json!([]),
-            rule_ids: json!([]),
-        };
-        let metadata = session_metadata(&agent, "ses_1", &"x".repeat(600));
-        assert_eq!(metadata["initial_prompt"].chars().count(), 512);
+fn normalize_integration_mcp_toolset(tool: &Value) -> Value {
+    let mut tool = tool.clone();
+    let Some(tool) = tool.as_object_mut() else {
+        return tool;
+    };
+    let default_config = tool
+        .entry("default_config".to_owned())
+        .or_insert_with(|| serde_json::json!({}));
+    if let Some(default_config) = default_config.as_object_mut() {
+        default_config
+            .entry("enabled".to_owned())
+            .or_insert(Value::Bool(true));
+        default_config
+            .entry("permission_policy".to_owned())
+            .or_insert_with(|| serde_json::json!({ "type": "always_allow" }));
     }
+    Value::Object(tool.clone())
 }
+
+#[cfg(test)]
+mod tests;

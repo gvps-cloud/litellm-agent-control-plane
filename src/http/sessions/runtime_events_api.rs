@@ -20,6 +20,9 @@ use crate::{
 };
 
 use super::{
+    runtime_events_reconcile::{
+        event_items, persist_runtime_event_values, reconcile_terminal_status_from_events,
+    },
     runtime_lifecycle::{
         event_error_message, mark_session_status, persist_runtime_event, terminal_event_status,
     },
@@ -137,7 +140,9 @@ pub async fn runtime_event_list(
     let row = session(pool, &session_id).await?;
     let stored = runtime_events::repository::list(pool, &row.id).await?;
     if !stored.is_empty() {
-        return Ok(Json(json!({ "data": stored })));
+        let events = json!({ "data": stored });
+        reconcile_terminal_status_from_events(&state, pool, &row.id, &row.status, &events).await?;
+        return Ok(Json(events));
     }
     let runtime = row.runtime.as_deref().ok_or_else(|| {
         GatewayError::InvalidConfig("session is not a runtime session".to_owned())
@@ -152,6 +157,8 @@ pub async fn runtime_event_list(
         .list(&row.id)
         .await
         .map_err(agent_sdk_error)?;
+    persist_runtime_event_values(pool, &row.id, &events).await?;
+    reconcile_terminal_status_from_events(&state, pool, &row.id, &row.status, &events).await?;
     emit_runtime_event_list(&state.callbacks, &row.id, &events).await;
     Ok(Json(events))
 }
@@ -203,10 +210,7 @@ async fn emit_runtime_event_list(
     session_id: &str,
     events: &Value,
 ) {
-    let items = events
-        .as_array()
-        .or_else(|| events.get("data").and_then(Value::as_array));
-    if let Some(items) = items {
+    if let Some(items) = event_items(events) {
         for event in items {
             emit_runtime_event(callbacks, session_id, event).await;
         }

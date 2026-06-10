@@ -14,6 +14,13 @@ async fn mcp_proxy_base_url_setting_round_trip_against_postgres() {
         return;
     };
 
+    assert_initial_proxy_base_url(&fixture).await;
+    assert_saved_proxy_base_url(&fixture).await;
+    assert_invalid_proxy_base_url_rejected(&fixture).await;
+    assert_cleared_proxy_base_url(&fixture).await;
+}
+
+async fn assert_initial_proxy_base_url(fixture: &AppFixture) {
     let initial = request_json(
         fixture.app.clone(),
         "GET",
@@ -23,7 +30,9 @@ async fn mcp_proxy_base_url_setting_round_trip_against_postgres() {
     .await;
     assert_eq!(initial["proxy_base_url"], "http://localhost");
     assert_eq!(initial["source"], "config");
+}
 
+async fn assert_saved_proxy_base_url(fixture: &AppFixture) {
     let saved = request_json(
         fixture.app.clone(),
         "PUT",
@@ -38,7 +47,9 @@ async fn mcp_proxy_base_url_setting_round_trip_against_postgres() {
             .unwrap(),
         "https://gateway.example.com/mcp/platform/agent_test"
     );
+}
 
+async fn assert_invalid_proxy_base_url_rejected(fixture: &AppFixture) {
     let (status, body) = request_json_raw(
         fixture.app.clone(),
         "PUT",
@@ -48,7 +59,9 @@ async fn mcp_proxy_base_url_setting_round_trip_against_postgres() {
     .await;
     assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
     assert!(body.contains("absolute http(s) URL"));
+}
 
+async fn assert_cleared_proxy_base_url(fixture: &AppFixture) {
     let cleared = request_json(
         fixture.app.clone(),
         "PUT",
@@ -151,6 +164,12 @@ async fn runtime_agent_create_preserves_tool_config_against_postgres() {
         return;
     };
 
+    assert_explicit_empty_tools_preserved(&fixture).await;
+    assert_top_level_tools_override_config_tools(&fixture).await;
+    assert_invalid_config_normalized(&fixture).await;
+}
+
+async fn assert_explicit_empty_tools_preserved(fixture: &AppFixture) {
     let explicit_empty_tools = create_test_agent(
         &fixture,
         json!({
@@ -167,7 +186,9 @@ async fn runtime_agent_create_preserves_tool_config_against_postgres() {
         "claude_managed_agents"
     );
     assert_eq!(explicit_empty_tools["config"]["tools"], json!([]));
+}
 
+async fn assert_top_level_tools_override_config_tools(fixture: &AppFixture) {
     let overriding_tools = create_test_agent(
         &fixture,
         json!({
@@ -181,7 +202,9 @@ async fn runtime_agent_create_preserves_tool_config_against_postgres() {
     .await;
     assert_eq!(overriding_tools["tools"], json!([]));
     assert_eq!(overriding_tools["config"]["tools"], json!([]));
+}
 
+async fn assert_invalid_config_normalized(fixture: &AppFixture) {
     let normalized_config = create_test_agent(
         &fixture,
         json!({
@@ -198,6 +221,17 @@ async fn runtime_agent_create_preserves_tool_config_against_postgres() {
         "claude_managed_agents"
     );
     assert_eq!(normalized_config["config"]["tools"], json!([]));
+}
+
+#[tokio::test]
+async fn claude_runtime_session_reuses_gateway_mcp_vault_against_postgres() {
+    let _guard = DB_TEST_LOCK.lock().await;
+    let Some(fixture) = AppFixture::new().await else {
+        eprintln!("skipping managed agent integration test: TEST_DATABASE_URL is not set");
+        return;
+    };
+
+    flows::exercise_claude_gateway_mcp_vault(&fixture).await;
 }
 
 async fn create_test_agent(fixture: &AppFixture, body: Value) -> Value {

@@ -2,6 +2,7 @@
 mod sdk_support;
 
 mod managed_agents_sdk {
+    pub mod claude;
     pub mod gemini;
 }
 
