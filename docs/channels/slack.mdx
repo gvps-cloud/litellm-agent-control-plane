@@ -1,0 +1,87 @@
+---
+title: "Slack"
+description: "Talk to your agents directly from Slack."
+---
+
+The Slack channel lets your team trigger agent sessions and receive responses without leaving Slack. Mention the bot or use a slash command to start a conversation.
+
+## Prerequisites
+
+- LiteLLM Agent Platform deployed and accessible
+- A Slack app with bot token and signing secret
+
+## 1. Create a Slack app
+
+Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**.
+
+Under **OAuth & Permissions**, add these bot token scopes:
+
+- `app_mentions:read`
+- `chat:write`
+- `channels:history`
+- `im:history`
+- `im:write`
+
+Install the app to your workspace and copy the **Bot User OAuth Token** (`xoxb-...`).
+
+## 2. Configure the LAP Slack integration
+
+In **Settings → Integrations → Slack**, add:
+
+| Field | Value |
+|---|---|
+| Bot Token | `xoxb-...` |
+| Signing Secret | From **Basic Information → App Credentials** |
+| Default Agent | The agent to route messages to |
+
+Or via the API:
+
+```bash
+curl -X POST $LAP_URL/api/v1/integrations/slack \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "bot_token": "xoxb-...",
+    "signing_secret": "...",
+    "default_agent_id": "<agent-id>"
+  }'
+```
+
+## 3. Set the event subscription URL
+
+In your Slack app → **Event Subscriptions**, set the Request URL to:
+
+```
+$LAP_URL/integrations/slack/events
+```
+
+Subscribe to these bot events:
+
+- `app_mention`
+- `message.im`
+
+## 4. Talk to your agent
+
+**Mention the bot in any channel:**
+
+```
+@YourBot summarize the latest PRs in the repo
+```
+
+**Or send a direct message:**
+
+```
+Hey, can you check the error logs and tell me what's failing?
+```
+
+The bot starts a new agent session, streams the response, and posts it back in the thread.
+
+## Routing to different agents
+
+Tag a specific agent by name in your message:
+
+```
+@YourBot [cursor-agent] fix the failing tests in src/utils.ts
+```
+
+Or configure per-channel defaults in **Settings → Integrations → Slack → Channel routing**.

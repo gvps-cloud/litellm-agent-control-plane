@@ -1,0 +1,97 @@
+---
+title: "DeepAgents"
+description: "Run agents using the DeepAgents runtime via Docker Compose."
+---
+
+DeepAgents is a multi-step agent runtime with deep reasoning and planning capabilities. The Docker Compose profile starts DeepAgents alongside the LiteLLM Agent Platform and registers `local-deepagents` automatically.
+
+## Prerequisites
+
+- Docker Desktop installed and running
+- LiteLLM Agent Platform repo cloned
+
+## 1. Start the stack
+
+```bash
+docker compose --profile deepagents up
+```
+
+This starts:
+
+- The LiteLLM Agent Platform web/API service
+- A Postgres database
+- The DeepAgents runtime harness
+- Registers `local-deepagents` in the UI automatically
+
+Open [http://localhost:4000](http://localhost:4000) and sign in with your master key (`sk-local` by default).
+
+## 2. Add model provider credentials
+
+In **Settings → Credentials**, add a model provider API key. DeepAgents routes all model calls through your LiteLLM gateway.
+
+## 3. Create an agent
+
+In the UI, click **New Agent**, choose `local-deepagents` as the runtime, select a model, and set a system prompt describing the agent's role.
+
+Or via the API:
+
+```bash
+curl -X POST http://localhost:4000/api/v1/managed_agents/agents \
+  -H "Authorization: Bearer sk-local" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "my-deepagent",
+    "runtime": "local-deepagents",
+    "model": "claude-opus-4-5",
+    "system_prompt": "You are an autonomous research agent. Plan carefully before acting."
+  }'
+```
+
+## 4. Run your agent
+
+Select your agent in the UI and start a session.
+
+Or via the API:
+
+```bash
+# Start a session
+SESSION=$(curl -s -X POST http://localhost:4000/api/v1/sessions \
+  -H "Authorization: Bearer sk-local" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id":"<agent-id>"}' | jq -r .id)
+
+# Send a task
+curl -X POST "http://localhost:4000/api/v1/sessions/$SESSION/events" \
+  -H "Authorization: Bearer sk-local" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "human_turn",
+    "content": "Research the top 5 open-source vector databases and compare them on latency and scalability."
+  }'
+
+# Stream the response
+curl -N "http://localhost:4000/api/v1/sessions/$SESSION/events/stream" \
+  -H "Authorization: Bearer sk-local"
+```
+
+## Stop the stack
+
+```bash
+docker compose --profile deepagents down
+```
+
+## Run alongside other runtimes
+
+```bash
+docker compose --profile deepagents --profile opencode up
+```
+
+## CRON schedules
+
+DeepAgents works well with scheduled runs. In the UI, open your agent, go to **Schedules**, and add a CRON expression:
+
+```
+0 9 * * 1-5
+```
+
+This runs the agent every weekday at 9 AM and creates a new session automatically.

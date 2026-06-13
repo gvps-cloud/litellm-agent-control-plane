@@ -1,3 +1,8 @@
+---
+title: "MCP gateway"
+description: "Configure the Rust gateway as an MCP proxy."
+---
+
 # MCP Support
 
 litellm-rust acts as an MCP gateway — it forwards requests from AI clients to your MCP servers, injecting upstream auth along the way. The config is **LiteLLM-compatible**: the `mcp_servers` block uses the same dict-keyed shape as the LiteLLM Python proxy, so an existing LiteLLM MCP config drops in for the supported cases.

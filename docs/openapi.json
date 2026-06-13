@@ -1,0 +1,726 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "LiteLLM Agent Platform API",
+    "description": "Unified API for the LiteLLM Agent Platform — gateway, agents, sessions, and runtimes.",
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "https://litellm-rust.onrender.com",
+      "description": "Production"
+    },
+    {
+      "url": "http://localhost:4000",
+      "description": "Local (Docker Compose)"
+    }
+  ],
+  "security": [
+    { "BearerAuth": [] }
+  ],
+  "tags": [
+    { "name": "System" },
+    { "name": "Models" },
+    { "name": "Messages" },
+    { "name": "API Keys" },
+    { "name": "Agents" },
+    { "name": "Sessions" },
+    { "name": "Runtimes" },
+    { "name": "MCP" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "summary": "Health check",
+        "tags": ["System"],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Server is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/capabilities": {
+      "get": {
+        "operationId": "getCapabilities",
+        "summary": "List gateway capabilities",
+        "tags": ["System"],
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Providers, endpoints, MCP servers, and agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "providers": { "type": "array", "items": { "type": "string" }, "example": ["anthropic", "openai"] },
+                    "mcp_servers": { "type": "array", "items": { "type": "string" } },
+                    "runtimes": { "type": "array", "items": { "type": "string" }, "example": ["local-opencode", "cursor"] }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Invalid or missing gateway key" }
+        }
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "operationId": "listModels",
+        "summary": "List configured model aliases",
+        "tags": ["Models"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "runtime",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Optional runtime alias. When set, returns models available for that runtime."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAI-compatible model list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": { "type": "string", "example": "list" },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string", "example": "anthropic/*" },
+                          "object": { "type": "string", "example": "model" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Invalid or missing gateway key" }
+        }
+      }
+    },
+    "/v1/messages": {
+      "post": {
+        "operationId": "createMessage",
+        "summary": "Create a message (Anthropic-compatible)",
+        "tags": ["Messages"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["model", "messages", "max_tokens"],
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "description": "Model alias from config. Available: anthropic/*, gpt-5.5",
+                    "example": "anthropic/*"
+                  },
+                  "messages": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["role", "content"],
+                      "properties": {
+                        "role": { "type": "string", "enum": ["user", "assistant"] },
+                        "content": { "type": "string" }
+                      }
+                    },
+                    "example": [{ "role": "user", "content": "Hello!" }]
+                  },
+                  "max_tokens": { "type": "integer", "example": 1024 },
+                  "stream": { "type": "boolean", "example": false }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Message response from upstream provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "type": { "type": "string", "example": "message" },
+                    "role": { "type": "string", "example": "assistant" },
+                    "content": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "type": { "type": "string", "example": "text" },
+                          "text": { "type": "string" }
+                        }
+                      }
+                    },
+                    "model": { "type": "string" },
+                    "stop_reason": { "type": "string", "example": "end_turn" },
+                    "usage": {
+                      "type": "object",
+                      "properties": {
+                        "input_tokens": { "type": "integer" },
+                        "output_tokens": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Invalid or missing master key" },
+          "404": { "description": "Model not found in config" }
+        }
+      }
+    },
+    "/api/keys": {
+      "get": {
+        "operationId": "listGatewayApiKeys",
+        "summary": "List gateway API keys",
+        "tags": ["API Keys"],
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "API key metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string" },
+                      "label": { "type": "string" },
+                      "created_at": { "type": "string", "format": "date-time" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Invalid or missing gateway key" }
+        }
+      },
+      "post": {
+        "operationId": "createGatewayApiKey",
+        "summary": "Create a gateway API key",
+        "tags": ["API Keys"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": { "type": "string", "example": "alice" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created. The secret is returned once.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "label": { "type": "string" },
+                    "key": { "type": "string", "description": "The secret value — shown once, store it now." }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Invalid or missing gateway key" }
+        }
+      }
+    },
+    "/api/keys/{id}": {
+      "delete": {
+        "operationId": "deleteGatewayApiKey",
+        "summary": "Delete a gateway API key",
+        "tags": ["API Keys"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": { "description": "Deleted" },
+          "401": { "description": "Invalid or missing gateway key" },
+          "404": { "description": "API key not found" }
+        }
+      }
+    },
+    "/api/runtime-harnesses": {
+      "get": {
+        "operationId": "listRuntimeHarnesses",
+        "summary": "List registered runtime harnesses",
+        "tags": ["Runtimes"],
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "List of registered runtimes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/RuntimeHarness" }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "post": {
+        "operationId": "createRuntimeHarness",
+        "summary": "Register a runtime harness",
+        "tags": ["Runtimes"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateRuntimeHarnessRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Runtime registered",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RuntimeHarness" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/runtime-harnesses/{alias}": {
+      "put": {
+        "operationId": "updateRuntimeHarness",
+        "summary": "Update a runtime harness",
+        "tags": ["Runtimes"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "alias", "in": "path", "required": true, "schema": { "type": "string" }, "example": "cursor" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateRuntimeHarnessRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Updated" },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Harness not found" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteRuntimeHarness",
+        "summary": "Delete a runtime harness",
+        "tags": ["Runtimes"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "alias", "in": "path", "required": true, "schema": { "type": "string" }, "example": "cursor" }
+        ],
+        "responses": {
+          "204": { "description": "Deleted" },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Harness not found" }
+        }
+      }
+    },
+    "/api/v1/managed_agents/agents": {
+      "get": {
+        "operationId": "listAgents",
+        "summary": "List agents",
+        "tags": ["Agents"],
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "List of agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Agent" }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "post": {
+        "operationId": "createAgent",
+        "summary": "Create an agent",
+        "tags": ["Agents"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateAgentRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Agent created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Agent" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/managed_agents/agents/{id}": {
+      "get": {
+        "operationId": "getAgent",
+        "summary": "Get an agent",
+        "tags": ["Agents"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Agent" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Agent not found" }
+        }
+      },
+      "patch": {
+        "operationId": "updateAgent",
+        "summary": "Update an agent",
+        "tags": ["Agents"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateAgentRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated agent",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Agent" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Agent not found" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAgent",
+        "summary": "Delete an agent",
+        "tags": ["Agents"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": { "description": "Deleted" },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Agent not found" }
+        }
+      }
+    },
+    "/api/v1/sessions": {
+      "post": {
+        "operationId": "createSession",
+        "summary": "Create a session",
+        "tags": ["Sessions"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateSessionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Session created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Session" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/sessions/{id}/events": {
+      "post": {
+        "operationId": "sendSessionEvent",
+        "summary": "Send an event to a session",
+        "tags": ["Sessions"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["type", "content"],
+                "properties": {
+                  "type": { "type": "string", "enum": ["human_turn"], "example": "human_turn" },
+                  "content": { "type": "string", "example": "Summarize the repo README." }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Event accepted" },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Session not found" }
+        }
+      }
+    },
+    "/api/v1/sessions/{id}/events/stream": {
+      "get": {
+        "operationId": "streamSessionEvents",
+        "summary": "Stream session events (SSE)",
+        "tags": ["Sessions"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          {
+            "name": "key",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "API key (alternative to Authorization header, required for EventSource)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server-sent event stream. Events are newline-delimited JSON prefixed with `data: `.",
+            "content": {
+              "text/event-stream": {
+                "schema": { "$ref": "#/components/schemas/AgentEvent" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Session not found" }
+        }
+      }
+    },
+    "/mcp/{server_name}": {
+      "post": {
+        "operationId": "mcpProxy",
+        "summary": "Proxy to a named MCP server",
+        "tags": ["MCP"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "server_name",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Server name as configured in config.yaml `mcp_servers` block",
+            "example": "github"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "method": { "type": "string", "example": "tools/list" },
+                  "params": { "type": "object" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "MCP server response" },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "MCP server not configured" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Your LITELLM_MASTER_KEY. Default for local Docker Compose: `sk-local`"
+      }
+    },
+    "schemas": {
+      "RuntimeHarness": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "alias": { "type": "string", "example": "cursor" },
+          "api_spec": {
+            "type": "string",
+            "enum": ["claude_managed_agents", "cursor", "gemini_antigravity", "elastic"],
+            "example": "cursor"
+          },
+          "api_base": { "type": "string", "example": "https://api2.cursor.sh" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateRuntimeHarnessRequest": {
+        "type": "object",
+        "required": ["alias", "api_spec", "api_base"],
+        "properties": {
+          "alias": { "type": "string", "example": "cursor" },
+          "api_spec": {
+            "type": "string",
+            "enum": ["claude_managed_agents", "cursor", "gemini_antigravity", "elastic"],
+            "example": "cursor"
+          },
+          "api_base": { "type": "string", "example": "https://api2.cursor.sh" }
+        }
+      },
+      "Agent": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string", "example": "my-agent" },
+          "runtime": { "type": "string", "example": "cursor" },
+          "model": { "type": "string", "example": "claude-opus-4-5" },
+          "system_prompt": { "type": "string" },
+          "memory_enabled": { "type": "boolean", "example": false },
+          "tools": { "type": "array", "items": { "type": "string" }, "example": ["bash", "file_read"] },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateAgentRequest": {
+        "type": "object",
+        "required": ["name", "runtime", "model"],
+        "properties": {
+          "name": { "type": "string", "example": "my-agent" },
+          "runtime": {
+            "type": "string",
+            "example": "cursor",
+            "description": "Alias of a registered runtime harness"
+          },
+          "model": { "type": "string", "example": "claude-opus-4-5" },
+          "system_prompt": { "type": "string", "example": "You are a helpful assistant." },
+          "memory_enabled": { "type": "boolean", "default": false },
+          "tools": {
+            "type": "array",
+            "items": { "type": "string" },
+            "example": ["bash", "file_read", "file_write"]
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "agent_id": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "running", "idle", "error"],
+            "example": "idle"
+          },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateSessionRequest": {
+        "type": "object",
+        "required": ["agent_id"],
+        "properties": {
+          "agent_id": { "type": "string" },
+          "environment": {
+            "type": "object",
+            "description": "Runtime-specific environment settings",
+            "properties": {
+              "repo": { "type": "string", "example": "your-org/your-repo" },
+              "branch": { "type": "string", "example": "main" },
+              "auto_create_pr": { "type": "boolean", "default": false }
+            }
+          }
+        }
+      },
+      "AgentEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "session.status_running",
+              "agent.message",
+              "agent.tool_use",
+              "agent.tool_result",
+              "session.status_idle",
+              "session.error"
+            ],
+            "example": "agent.message"
+          },
+          "content": { "type": "string", "example": "Here is the summary..." }
+        }
+      }
+    }
+  }
+}

@@ -20,7 +20,7 @@ pub fn load_config(path: &Path) -> Result<GatewayConfig, GatewayError> {
         if is_mcp_sequence_error(&raw, &error) {
             GatewayError::InvalidConfig(
                 "mcp_servers is now a dict keyed by server name (was a list). \
-                 See docs/mcp.md for the new format."
+                 See docs/engineering/mcp-gateway.mdx for the new format."
                     .to_owned(),
             )
         } else {

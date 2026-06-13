@@ -1,6 +1,6 @@
 # SDK Agent Instructions
 
-You are working inside `src/sdk/`. Read `docs/sdk_api.md` before making any changes.
+You are working inside `src/sdk/`. Read `docs/engineering/sdk-api-contract.mdx` before making any changes.
 
 ## Core invariant
 
@@ -19,7 +19,7 @@ All provider differences belong in `sdk/providers/<provider>/runtime/mod.rs`. If
 
 ## Output shapes follow the Anthropic API
 
-`ManagedAgent`, `Session`, and `AgentEvent` follow the Anthropic Managed Agents API shape (see `docs/sdk_api.md`). If a runtime returns a different shape (e.g. Cursor), the adapter normalizes it. The caller always sees the Anthropic shape. The `.raw` field is the escape hatch for anything not yet covered by typed fields.
+`ManagedAgent`, `Session`, and `AgentEvent` follow the Anthropic Managed Agents API shape (see `docs/engineering/sdk-api-contract.mdx`). If a runtime returns a different shape (e.g. Cursor), the adapter normalizes it. The caller always sees the Anthropic shape. The `.raw` field is the escape hatch for anything not yet covered by typed fields.
 
 ## Adding a new runtime
 

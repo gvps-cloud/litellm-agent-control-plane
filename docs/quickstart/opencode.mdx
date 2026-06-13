@@ -1,0 +1,92 @@
+---
+title: "OpenCode"
+description: "Run agents using the OpenCode runtime via Docker Compose."
+---
+
+OpenCode is an open-source coding agent runtime. The Docker Compose profile starts OpenCode alongside the LiteLLM Agent Platform and registers `local-opencode` automatically.
+
+## Prerequisites
+
+- Docker Desktop installed and running
+- LiteLLM Agent Platform repo cloned
+
+## 1. Start the stack
+
+```bash
+docker compose --profile opencode up
+```
+
+This starts:
+
+- The LiteLLM Agent Platform web/API service
+- A Postgres database
+- The OpenCode runtime harness
+- Registers `local-opencode` in the UI automatically
+
+Open [http://localhost:4000](http://localhost:4000) and sign in with your master key (`sk-local` by default).
+
+## 2. Add model provider credentials
+
+Before running an agent, add at least one model provider key in **Settings → Credentials** (e.g. an Anthropic or OpenAI API key). OpenCode routes model calls through your LiteLLM gateway.
+
+## 3. Create an agent
+
+In the UI, click **New Agent**, choose `local-opencode` as the runtime, select a model, and optionally set a system prompt.
+
+Or via the API:
+
+```bash
+curl -X POST http://localhost:4000/api/v1/managed_agents/agents \
+  -H "Authorization: Bearer sk-local" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "my-opencode-agent",
+    "runtime": "local-opencode",
+    "model": "claude-opus-4-5",
+    "system_prompt": "You are a senior software engineer."
+  }'
+```
+
+## 4. Run your agent
+
+Select your agent in the UI and click **Run**. Type a message in the chat panel and OpenCode will start executing.
+
+Or via the API:
+
+```bash
+# Start a session
+SESSION=$(curl -s -X POST http://localhost:4000/api/v1/sessions \
+  -H "Authorization: Bearer sk-local" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id":"<agent-id>"}' | jq -r .id)
+
+# Send a message
+curl -X POST "http://localhost:4000/api/v1/sessions/$SESSION/events" \
+  -H "Authorization: Bearer sk-local" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"human_turn","content":"Add type annotations to all functions in src/"}'
+
+# Stream the response
+curl -N "http://localhost:4000/api/v1/sessions/$SESSION/events/stream" \
+  -H "Authorization: Bearer sk-local"
+```
+
+## Stop the stack
+
+```bash
+docker compose --profile opencode down
+```
+
+## Run alongside other runtimes
+
+You can start multiple runtimes at once:
+
+```bash
+docker compose --profile opencode --profile deepagents up
+```
+
+This registers both `local-opencode` and `local-deepagents` in the UI.
+
+## Configuration
+
+OpenCode runtime configuration lives in the `docker-compose.yml` `opencode` service block. You can override the default model and tool settings via environment variables in that block.

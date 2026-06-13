@@ -1,0 +1,68 @@
+---
+title: "Authentication"
+description: "How the LiteLLM gateway authenticates incoming requests."
+---
+
+Every request to the LiteLLM gateway is authenticated against a single **master key** before routing. Auth runs as the first step of every API endpoint.
+
+## Configure the master key
+
+Set `master_key` under `general_settings` in `config.yaml`:
+
+```yaml
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+```
+
+The value is read from the `LITELLM_MASTER_KEY` environment variable at boot.
+
+For local Docker Compose, the default master key is `sk-local`. Change it by setting `LITELLM_MASTER_KEY` in your `.env` file.
+
+## Supported header formats
+
+The gateway accepts the master key in two header styles:
+
+| Priority | Header | Format |
+|---|---|---|
+| 1 | `Authorization` | `Bearer <key>` |
+| 2 | `x-api-key` | raw key, no prefix |
+
+## Response codes
+
+| Case | Status |
+|---|---|
+| Key matches | Request proceeds |
+| Key wrong or missing (master key is set) | `401 Unauthorized` |
+| No master key configured | Request proceeds (auth disabled) |
+
+A `401` returns:
+
+```json
+{
+  "error": {
+    "type": "gateway_error",
+    "message": "unauthorized"
+  }
+}
+```
+
+## Key separation
+
+The master key authenticates **callers to the gateway**. It is separate from the provider API keys the gateway uses to call upstream LLMs. Provider keys are stored encrypted in the credentials vault and never exposed to callers.
+
+## Per-user keys (teams)
+
+For team access, issue per-user virtual keys instead of sharing the master key. In **Settings → Keys**, click **New Key** and set budget limits, model restrictions, and expiry.
+
+```bash
+curl -X POST $LAP_URL/api/v1/key/generate \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "key_alias": "alice",
+    "models": ["claude-opus-4-5", "gpt-4o"],
+    "max_budget": 10.00
+  }'
+```
+
+Team members use their virtual key as `Authorization: Bearer <virtual-key>` — they never see the master key or any provider credential.

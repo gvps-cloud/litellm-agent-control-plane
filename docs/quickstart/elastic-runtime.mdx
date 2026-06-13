@@ -1,0 +1,92 @@
+---
+title: "Elastic Runtime"
+description: "Auto-scale agent runtimes on demand without managing containers."
+---
+
+The Elastic runtime provisions agent execution environments on demand — no Docker containers to manage, no warm pool to maintain. Instances spin up when a session starts and terminate when it ends. This is the recommended runtime for production workloads with variable concurrency.
+
+## How it works
+
+Unlike the Docker Compose runtimes (`opencode`, `deepagents`, `hermes`), the Elastic runtime:
+
+- Provisions a fresh isolated environment per session
+- Scales to zero between runs — no idle cost
+- Supports any model your LiteLLM gateway can route
+- Handles concurrency automatically
+
+## Prerequisites
+
+- LiteLLM Agent Platform deployed (not just local Docker Compose)
+- A model provider API key in **Settings → Credentials**
+
+## 1. Register the Elastic runtime harness
+
+```bash
+curl -X POST $LAP_URL/api/runtime-harnesses \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "alias": "elastic",
+    "api_spec": "elastic",
+    "api_base": "$LAP_URL"
+  }'
+```
+
+## 2. Create an agent
+
+```bash
+curl -X POST $LAP_URL/api/v1/managed_agents/agents \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "my-elastic-agent",
+    "runtime": "elastic",
+    "model": "claude-opus-4-5",
+    "system_prompt": "You are a helpful assistant.",
+    "tools": ["bash", "file_read", "file_write"]
+  }'
+```
+
+## 3. Start a session
+
+Sessions provision an environment on demand. Cold start is typically under 10 seconds.
+
+```bash
+SESSION=$(curl -s -X POST $LAP_URL/api/v1/sessions \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id":"<agent-id>"}' | jq -r .id)
+```
+
+## 4. Run and stream
+
+```bash
+curl -X POST "$LAP_URL/api/v1/sessions/$SESSION/events" \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"human_turn","content":"Analyze the error logs and suggest fixes."}'
+
+curl -N "$LAP_URL/api/v1/sessions/$SESSION/events/stream" \
+  -H "Authorization: Bearer $MASTER_KEY"
+```
+
+## Memory across sessions
+
+Enable persistent memory so the agent recalls context across separate sessions:
+
+```bash
+curl -X PATCH $LAP_URL/api/v1/managed_agents/agents/<agent-id> \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"memory_enabled": true}'
+```
+
+## Comparison: Elastic vs Docker Compose runtimes
+
+| | Elastic | OpenCode / DeepAgents / Hermes |
+|---|---|---|
+| **Startup** | On demand (~10s) | Pre-warmed (instant) |
+| **Idle cost** | None | Containers always running |
+| **Concurrency** | Auto-scales | Fixed to running containers |
+| **Setup** | Register harness | `docker compose --profile <name> up` |
+| **Best for** | Production, variable load | Local dev, demos |

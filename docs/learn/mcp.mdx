@@ -1,0 +1,91 @@
+---
+title: "MCP Support"
+description: "Use the LiteLLM gateway as an MCP proxy to inject upstream auth into tool calls."
+---
+
+The LiteLLM gateway acts as an **MCP (Model Context Protocol) proxy** — it forwards requests from AI clients to MCP servers and injects upstream credentials at the wire level. Agents never hold real MCP server credentials.
+
+## Configuration
+
+MCP servers are declared in `config.yaml` using the same dict-keyed format as LiteLLM:
+
+```yaml
+mcp_servers:
+  github:
+    url: https://api.github.com/mcp
+    auth_type: bearer_token
+    auth_value: os.environ/GITHUB_TOKEN
+  postgres:
+    url: http://localhost:5432/mcp
+    auth_type: api_key
+    auth_value: os.environ/POSTGRES_MCP_KEY
+  public_tool:
+    url: https://example.com/mcp
+    auth_type: none
+```
+
+## Endpoints
+
+### Route to a specific server
+
+```
+/mcp/{server_name}
+```
+
+```bash
+curl -X POST $LAP_URL/mcp/github \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"method":"tools/list"}'
+```
+
+### Auto-select server
+
+```
+/mcp
+```
+
+The gateway selects the server using (in priority order):
+
+1. `x-litellm-mcp-server: <name>` header
+2. `?server=<name>` query parameter
+3. First configured server (if only one)
+
+```bash
+curl -X POST "$LAP_URL/mcp?server=github" \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"method":"tools/call","params":{"name":"search_repos","arguments":{"q":"litellm"}}}'
+```
+
+All MCP endpoints require `Authorization: Bearer <master-key>`.
+
+## Supported auth types
+
+| Type | Description |
+|---|---|
+| `none` | No auth injected |
+| `api_key` | Adds `x-api-key: <value>` header |
+| `bearer_token` | Adds `Authorization: Bearer <value>` header |
+| `basic` | Adds `Authorization: Basic <base64>` header |
+| `authorization` | Adds a raw `Authorization: <value>` header |
+| `token` | Adds `Token <value>` header |
+
+## Referencing secrets
+
+Auth values starting with `os.environ/` are read from environment variables at boot:
+
+```yaml
+auth_value: os.environ/MY_MCP_TOKEN
+```
+
+This keeps credentials out of `config.yaml` and version control.
+
+## Current limitations
+
+These features from LiteLLM's hosted MCP are not yet supported:
+
+- Multi-server aggregation behind a single `/mcp` endpoint
+- Per-request upstream credentials via `x-mcp-{server}-{header}`
+- `oauth2` and `aws_sigv4` auth types
+- `sse` and `stdio` transports (HTTP only)

@@ -77,4 +77,4 @@ Select your agent and the runtime you want to run it on.
 
 ## Contributing
 
-PRs welcome. See [docs/contributing.md](docs/contributing.md).
+PRs welcome. See [docs/engineering/contributing.mdx](docs/engineering/contributing.mdx).

@@ -1,0 +1,167 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "luma",
+  "name": "🚄 LiteLLM Agent Platform",
+  "favicon": "/images/wordmark-light.svg",
+  "logo": {
+    "light": "/images/wordmark-light.svg",
+    "dark": "/images/wordmark-dark.svg"
+  },
+  "colors": {
+    "primary": "#7C3AED",
+    "light": "#A78BFA",
+    "dark": "#000000"
+  },
+  "background": {
+    "decoration": "grid",
+    "color": {
+      "light": "#FFFFFF",
+      "dark": "#0A0A0A"
+    }
+  },
+  "appearance": {
+    "default": "light"
+  },
+  "api": {
+    "openapi": "openapi.json",
+    "playground": {
+      "display": "interactive"
+    },
+    "examples": {
+      "languages": ["curl", "python", "javascript"],
+      "autogenerate": true
+    }
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/LiteLLM-Labs/litellm-agent-platform"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Docs",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Runtimes",
+            "pages": [
+              "quickstart/claude-managed-agents",
+              "quickstart/cursor",
+              "quickstart/opencode",
+              "quickstart/deepagents",
+              "quickstart/elastic-runtime"
+            ]
+          },
+          {
+            "group": "Channels",
+            "pages": [
+              "channels/ui",
+              "channels/api",
+              "channels/slack"
+            ]
+          },
+          {
+            "group": "Learn",
+            "pages": [
+              "learn/architecture",
+              "learn/auth",
+              "learn/mcp"
+            ]
+          },
+          {
+            "group": "Engineering",
+            "pages": [
+              "engineering/gateway-architecture",
+              "engineering/gateway-authentication",
+              "engineering/mcp-gateway",
+              "engineering/managed-agents-sdk",
+              "engineering/sdk-api-contract",
+              "engineering/cursor-runtime",
+              "engineering/multiple-runtime-harnesses",
+              "engineering/debugging",
+              "engineering/contributing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": ["api-reference/overview"]
+          },
+          {
+            "group": "Agents",
+            "pages": [
+              "api-reference/agents/list",
+              "api-reference/agents/create",
+              "api-reference/agents/get",
+              "api-reference/agents/update",
+              "api-reference/agents/delete"
+            ]
+          },
+          {
+            "group": "Sessions",
+            "pages": [
+              "api-reference/sessions/create",
+              "api-reference/sessions/send-event",
+              "api-reference/sessions/stream"
+            ]
+          },
+          {
+            "group": "Runtimes",
+            "pages": [
+              "api-reference/runtimes/list",
+              "api-reference/runtimes/create",
+              "api-reference/runtimes/update",
+              "api-reference/runtimes/delete"
+            ]
+          },
+          {
+            "group": "Gateway",
+            "pages": [
+              "api-reference/messages",
+              "api-reference/models",
+              "api-reference/mcp"
+            ]
+          },
+          {
+            "group": "API Keys",
+            "pages": [
+              "api-reference/keys/list",
+              "api-reference/keys/create",
+              "api-reference/keys/delete"
+            ]
+          },
+          {
+            "group": "System",
+            "pages": [
+              "api-reference/system/health",
+              "api-reference/system/capabilities"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Changelog",
+        "groups": [
+          {
+            "group": "Changelog",
+            "pages": [
+              "changelog/overview"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

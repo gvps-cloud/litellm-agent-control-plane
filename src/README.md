@@ -2,7 +2,7 @@
 
 Source layout for the litellm-rust gateway. A request flows
 `endpoint → router → transformation → llm api`; see
-[docs/architecture.md](../docs/architecture.md) for the full picture.
+[docs/engineering/gateway-architecture.mdx](../docs/engineering/gateway-architecture.mdx) for the full picture.
 
 The codebase splits request routing, provider endpoint transformation,
 managed-agent runtime SDK, and proxy concerns. SDK routing lives in
@@ -34,4 +34,4 @@ and HTTP routes.
 
 Drop a provider folder under `sdk/providers/<name>/` with a `<endpoint>/mod.rs`
 (`pub fn init`) and a `<endpoint>/transformation.rs`. `build.rs` wires it in
-automatically. See [docs/architecture.md](../docs/architecture.md#providers-are-self-contained).
+automatically. See [docs/engineering/gateway-architecture.mdx](../docs/engineering/gateway-architecture.mdx#providers-are-self-contained).

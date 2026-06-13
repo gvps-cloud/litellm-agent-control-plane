@@ -1,0 +1,133 @@
+---
+title: "Cursor Agents API"
+description: "Run agents using the Cursor Agents runtime."
+---
+
+The Cursor runtime lets you create and run Cursor background agents through the LiteLLM Agent Platform. Sessions support repository and pull-request context. The platform normalizes Cursor's event stream to the standard Anthropic Managed Agents shape, so calling code is runtime-agnostic.
+
+## Prerequisites
+
+- LiteLLM Agent Platform running
+- Cursor API key (from your Cursor account settings)
+
+## 1. Add your Cursor API key
+
+Open **Settings → Credentials** in the UI and add your Cursor API key.
+
+Or via the API:
+
+```bash
+curl -X POST $LAP_URL/api/v1/credentials \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "cursor-api-key",
+    "value": "<your-cursor-api-key>"
+  }'
+```
+
+## 2. Register the Cursor runtime harness
+
+```bash
+curl -X POST $LAP_URL/api/runtime-harnesses \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "alias": "cursor",
+    "api_spec": "cursor",
+    "api_base": "https://api2.cursor.sh"
+  }'
+```
+
+## 3. Create an agent
+
+In the UI, click **New Agent**, choose `cursor` as the runtime, and save.
+
+Or via the API:
+
+```bash
+curl -X POST $LAP_URL/api/v1/managed_agents/agents \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "my-cursor-agent",
+    "runtime": "cursor",
+    "model": "claude-opus-4-5"
+  }'
+```
+
+## 4. Start a session with repo context
+
+Cursor sessions accept `environment` fields for repository and PR settings:
+
+```bash
+curl -X POST $LAP_URL/api/v1/sessions \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "<agent-id>",
+    "environment": {
+      "repo": "your-org/your-repo",
+      "branch": "main",
+      "auto_create_pr": false
+    }
+  }'
+```
+
+## 5. Send a message
+
+```bash
+curl -X POST $LAP_URL/api/v1/sessions/<session-id>/events \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "human_turn",
+    "content": "Fix the failing tests in src/utils.ts"
+  }'
+```
+
+## 6. Stream events
+
+```bash
+curl -N "$LAP_URL/api/v1/sessions/<session-id>/events/stream" \
+  -H "Authorization: Bearer $MASTER_KEY"
+```
+
+Cursor's native events (`assistant`, `tool_call`, `status`, `result`) are normalized to the Anthropic event surface:
+
+| Cursor event | Normalized to |
+|---|---|
+| `status` (running) | `session.status_running` |
+| `assistant` | `agent.message` |
+| `tool_call` | `agent.tool_use` |
+| `result` | `agent.tool_result` |
+| `status` (idle) | `session.status_idle` |
+
+## SDK usage (Rust)
+
+```rust
+use lap_sdk::{Lap, LapConfig};
+
+let client = Lap::new(LapConfig::cursor(std::env::var("CURSOR_API_KEY")?));
+
+let agent = client.beta().agents().create(CreateAgentParams {
+    name: "my-cursor-agent".into(),
+    model: "claude-opus-4-5".into(),
+    ..Default::default()
+}).await?;
+
+let session = client.beta().sessions().create(CreateSessionParams {
+    agent_id: agent.id.clone(),
+    environment: Some(AgentWorkspace {
+        repo: Some("your-org/your-repo".into()),
+        branch: Some("main".into()),
+        auto_create_pr: Some(false),
+        ..Default::default()
+    }),
+    ..Default::default()
+}).await?;
+```
+
+<Note>
+Cursor sessions start immediately on creation — no need to send an initial event to kick off the run.
+</Note>

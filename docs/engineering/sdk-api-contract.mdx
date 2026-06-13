@@ -1,3 +1,8 @@
+---
+title: "SDK API contract"
+description: "The normalized API contract for managed agent runtimes."
+---
+
 # Managed Agent Runtime SDK — API Contract
 
 The SDK exposes a single Anthropic-shaped surface for every runtime (Claude Managed Agents, Cursor, Gemini Antigravity, and any future runtime). Callers use the same four-step flow regardless of which runtime is active. Provider differences are fully encapsulated inside `sdk/providers/<provider>/runtime/`.

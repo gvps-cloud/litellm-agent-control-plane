@@ -1,0 +1,31 @@
+---
+title: "UI"
+description: "Talk to your agents through the LiteLLM Agent Platform web interface."
+---
+
+The LAP web UI is the fastest way to create, run, and chat with agents. No API calls or CLI required.
+
+## Access
+
+Open [http://localhost:4000](http://localhost:4000) (local) or your deployed LAP URL and sign in with your master key.
+
+## Create and run an agent
+
+1. Click **New Agent** in the sidebar
+2. Choose a runtime (OpenCode, Cursor, Claude Managed Agents, etc.)
+3. Select a model and optionally set a system prompt
+4. Click **Run** to start a session
+
+The chat panel opens inline — type a message and the agent responds in real time with streamed output.
+
+## Session history
+
+All past sessions are listed under your agent. Click any session to replay the conversation or resume it if it's still active.
+
+## CRON schedules
+
+Open an agent → **Schedules** → **Add schedule** to run the agent automatically on a cron expression. Each scheduled run creates a new session and appears in the session history.
+
+## Multi-agent view
+
+The dashboard lists all agents across all runtimes. Filter by runtime or model using the search bar.

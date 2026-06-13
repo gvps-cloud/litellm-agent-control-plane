@@ -1,0 +1,46 @@
+---
+title: "API Overview"
+description: "The LiteLLM Agent Platform REST API."
+---
+
+The LiteLLM Agent Platform exposes a REST API for managing runtimes, agents, and sessions. All endpoints require a `Authorization: Bearer <key>` header (or `?key=<key>` for SSE streams).
+
+## Base URL
+
+| Environment | URL |
+|---|---|
+| **Production** | `https://litellm-rust.onrender.com` |
+| **Local (Docker Compose)** | `http://localhost:4000` |
+
+## Authentication
+
+All endpoints require your master key:
+
+```bash
+curl https://litellm-rust.onrender.com/api/v1/managed_agents/agents \
+  -H "Authorization: Bearer $MASTER_KEY"
+```
+
+The default master key for local Docker Compose is `sk-local`.
+
+## Live Swagger UI
+
+The full interactive Swagger UI is available at:
+
+- **Production:** [litellm-rust.onrender.com/docs](https://litellm-rust.onrender.com/docs)
+- **Local:** [localhost:4000/docs](http://localhost:4000/docs)
+
+The raw spec is at `/openapi.json` — import it into Postman, Insomnia, or any OpenAPI-compatible client.
+
+## Endpoint groups
+
+| Group | Description |
+|---|---|
+| **System** | Health check and capabilities |
+| **Models** | List available model aliases |
+| **Messages** | Anthropic-compatible chat completions |
+| **Agents** | Create and manage agents |
+| **Sessions** | Create sessions and stream events |
+| **Runtimes** | Register and manage runtime harnesses |
+| **API Keys** | Issue and revoke gateway keys |
+| **MCP** | Proxy requests to MCP tool servers |
