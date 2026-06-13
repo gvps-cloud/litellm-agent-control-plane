@@ -1,4 +1,4 @@
-# LiteLLM Agent Platform
+# LiteLLM Agent Control Plane
 
 1 place to call all your agents - OpenCode, Hermes, Claude
 Managed Agents, Cursor Agents API, DeepAgents.
