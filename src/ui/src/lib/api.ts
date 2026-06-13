@@ -654,7 +654,9 @@ export async function listModels(runtime?: string): Promise<string[]> {
 
 function draftModelFrom(models: string[]): string {
   const concrete = models.filter((model) => !model.endsWith("/*"));
-  const model = concrete[0] ?? models[0];
+  // Prefer Claude 4+ models for drafting; avoid deprecated Claude 3.x models
+  const preferred = concrete.find((m) => /claude-(4|sonnet-4|opus-4|haiku-4|fable)/.test(m));
+  const model = preferred ?? concrete[0] ?? models[0];
   if (!model) throw new Error("No models are configured.");
   return model;
 }
