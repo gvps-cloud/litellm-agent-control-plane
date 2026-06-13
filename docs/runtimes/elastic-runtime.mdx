@@ -1,0 +1,99 @@
+---
+title: "Elastic Agent Builder"
+description: "Run LAP sessions against an existing Elastic Agent Builder agent."
+---
+
+The Elastic Agent Builder runtime connects LAP to an existing Elastic Agent Builder agent. LAP stores a local agent record, binds it to an Elastic agent ID, and sends prompts through the Kibana Agent Builder API.
+
+## How it works
+
+Unlike the Docker Compose runtimes (`opencode`, `deepagents`, `hermes`), the Elastic runtime does not start local containers. It:
+
+- Uses the built-in `elastic_agent_builder` runtime
+- Requires an existing Elastic Agent Builder agent ID
+- Sends turns to Elastic's `/api/agent_builder/converse/async` endpoint
+- Can optionally target an Elastic space or connector
+
+## Prerequisites
+
+- LiteLLM Agent Platform running
+- Elastic API key
+- Kibana base URL
+- Existing Elastic Agent Builder agent ID
+
+## 1. Add Elastic runtime credentials
+
+```bash
+curl -X PUT $LAP_URL/api/agent-runtimes/elastic_agent_builder/credentials \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "api_key": "<your-elastic-api-key>",
+    "api_base": "https://your-kibana.example.com"
+  }'
+```
+
+## 2. Create an agent
+
+```bash
+curl -X POST $LAP_URL/api/agents \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "my-elastic-agent",
+    "owner_id": "local-user",
+    "runtime": "elastic_agent_builder",
+    "model": "claude-opus-4-5",
+    "system": "You are a helpful assistant.",
+    "config": {
+      "elastic_agent_id": "<elastic-agent-builder-agent-id>",
+      "elastic_space_id": "default"
+    }
+  }'
+```
+
+## 3. Start a session
+
+```bash
+SESSION=$(curl -s -X POST $LAP_URL/session \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "runtime": "elastic_agent_builder",
+    "agent_id": "<agent-id>",
+    "prompt": "Analyze the error logs and suggest fixes."
+  }' | jq -r .id)
+```
+
+## 4. Stream events
+
+```bash
+curl -N "$LAP_URL/v1/sessions/$SESSION/events/stream" \
+  -H "Authorization: Bearer $MASTER_KEY"
+```
+
+## Memory across sessions
+
+Store provider-specific binding options in the agent `config`. You can patch them later:
+
+```bash
+curl -X PATCH $LAP_URL/api/agents/<agent-id> \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "config": {
+      "elastic_agent_id": "<elastic-agent-builder-agent-id>",
+      "elastic_space_id": "default",
+      "elastic_connector_id": "<optional-connector-id>"
+    }
+  }'
+```
+
+## Comparison: Elastic vs Docker Compose runtimes
+
+| | Elastic | OpenCode / DeepAgents / Hermes |
+|---|---|---|
+| **Runtime ID** | `elastic_agent_builder` | `local-opencode`, `local-deepagents`, `local-hermes` |
+| **Backend** | Existing Elastic Agent Builder agent | Local template service |
+| **Setup** | Save Elastic credentials and bind `elastic_agent_id` | `docker compose --profile <name> up` |
+| **Best for** | Existing Elastic Agent Builder workflows | Local dev, demos |

@@ -1,33 +1,69 @@
 ---
 title: "Architecture"
-description: "How LiteLLM Agent Platform connects one UI and API to multiple agent runtimes."
+description: "LiteLLM Agent Platform is one service plus Postgres."
 ---
 
-## Components
+LiteLLM Agent Platform is intentionally small:
 
-| Component | Where it runs | What it does |
-|---|---|---|
-| Web and API service | `lite` on `:4000` | Serves the dashboard, REST API, gateway routes, and session streams |
-| Postgres | Docker Compose or your database | Stores agents, sessions, runtime harnesses, credentials, schedules, memory, and settings |
-| LiteLLM gateway | Rust service | Routes model calls, authenticates requests, proxies MCP traffic, and calls upstream providers |
-| Runtime harnesses | Built-in providers or template services | Run agent sessions through Claude Managed Agents, Cursor, OpenCode, DeepAgents, Hermes, or Elastic Runtime |
-| Runtime adapters | `src/sdk/providers/<provider>/runtime/` | Normalize each runtime to the same managed-agent session and event shape |
-| UI channels | Dashboard, API, Slack | Give teams shared surfaces for creating agents and running sessions |
+- One Docker image runs the `lite` service.
+- One Postgres database stores persistent state.
+- Everything else is either an upstream API call or an optional runtime profile.
 
-## Request flow
+The `lite` service serves the dashboard, REST API, LiteLLM-compatible gateway routes, MCP proxy routes, Slack callbacks, and runtime event streams from the same process.
 
-1. You create an agent in the UI or API.
-2. The platform stores the agent, tools, MCP servers, model settings, and runtime selection in Postgres.
-3. You start a session from the UI, API, or Slack.
-4. The session resolves a runtime alias, loads the right credential, and calls the runtime adapter.
-5. The selected runtime creates or resumes the remote session.
-6. Events stream back through LAP as a normalized session stream.
-7. The dashboard and API clients render the same session state.
+## What Runs
+
+| Process | Required | What it does |
+|---|---:|---|
+| `lite` | Yes | Serves the UI, API, gateway, MCP proxy, Slack callbacks, and session streams |
+| Postgres | Yes | Stores agents, sessions, credentials, runtime harnesses, schedules, memory, and settings |
+| Template runtimes | Optional | Local OpenCode, DeepAgents, or Hermes services for development and demos |
+
+The LiteLLM gateway is not a separate deployment. It is part of the same `lite` service.
+
+## Docker Shape
+
+The repository has one main `Dockerfile`. It builds the static UI, builds the Rust `lite` binary, and packages both into one runtime image:
+
+```text
+browser/API/Slack -> lite container -> Postgres
+                         |
+                         +-> model providers, MCP servers, or agent runtimes
+```
+
+For local development, `compose.yaml` starts:
+
+- `lap`, built from the root `Dockerfile`
+- `postgres`
+
+Optional Compose profiles add local runtime services:
+
+```bash
+docker compose --profile opencode up
+docker compose --profile deepagents up
+docker compose --profile hermes up
+```
+
+Those profiles are conveniences. They are not required to run LAP.
+
+## Request Flow
+
+1. A user opens the dashboard, calls the REST API, or talks to a connected Slack app.
+2. The request reaches the `lite` service.
+3. LAP reads or writes state in Postgres.
+4. If the request needs a model, MCP server, or agent runtime, LAP calls that upstream service.
+5. Runtime events stream back through the same `lite` service to the UI or API client.
 
 ## Local stack
 
-Docker Compose starts the web/API service, Postgres, and optional template runtime profiles. Runtime profiles register themselves through the LAP API after the service is healthy, so `local-opencode`, `local-deepagents`, and `local-hermes` appear in the UI automatically.
+The smallest local stack is:
+
+```bash
+docker compose up
+```
+
+That starts LAP and Postgres. Add a runtime profile only when you want a local template runtime registered automatically.
 
 ## Implementation details
 
-For deeper gateway internals, see [Gateway architecture](/engineering/gateway-architecture). For the normalized runtime SDK contract, see [SDK API contract](/engineering/sdk-api-contract).
+For the normalized runtime SDK contract, see [Internal SDK contract](/engineering/sdk-api-contract).

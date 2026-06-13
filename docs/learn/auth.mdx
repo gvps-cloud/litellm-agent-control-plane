@@ -55,13 +55,11 @@ The master key authenticates **callers to the gateway**. It is separate from the
 For team access, issue per-user virtual keys instead of sharing the master key. In **Settings → Keys**, click **New Key** and set budget limits, model restrictions, and expiry.
 
 ```bash
-curl -X POST $LAP_URL/api/v1/key/generate \
+curl -X POST $LAP_URL/api/keys \
   -H "Authorization: Bearer $MASTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "key_alias": "alice",
-    "models": ["claude-opus-4-5", "gpt-4o"],
-    "max_budget": 10.00
+    "label": "alice"
   }'
 ```
 

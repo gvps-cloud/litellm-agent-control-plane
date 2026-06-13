@@ -17,27 +17,18 @@ Open **Settings → Credentials** in the UI and add your Cursor API key.
 Or via the API:
 
 ```bash
-curl -X POST $LAP_URL/api/v1/credentials \
+curl -X PUT $LAP_URL/api/agent-runtimes/cursor/credentials \
   -H "Authorization: Bearer $MASTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "cursor-api-key",
-    "value": "<your-cursor-api-key>"
+    "api_key": "<your-cursor-api-key>",
+    "api_base": "https://api.cursor.com"
   }'
 ```
 
-## 2. Register the Cursor runtime harness
+## 2. Select the built-in runtime
 
-```bash
-curl -X POST $LAP_URL/api/runtime-harnesses \
-  -H "Authorization: Bearer $MASTER_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "alias": "cursor",
-    "api_spec": "cursor",
-    "api_base": "https://api2.cursor.sh"
-  }'
-```
+`cursor` is a built-in runtime. You do not need to register a custom runtime harness unless you are proxying through your own Cursor-compatible service.
 
 ## 3. Create an agent
 
@@ -46,13 +37,15 @@ In the UI, click **New Agent**, choose `cursor` as the runtime, and save.
 Or via the API:
 
 ```bash
-curl -X POST $LAP_URL/api/v1/managed_agents/agents \
+curl -X POST $LAP_URL/api/agents \
   -H "Authorization: Bearer $MASTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "my-cursor-agent",
+    "owner_id": "local-user",
     "runtime": "cursor",
-    "model": "claude-opus-4-5"
+    "model": "claude-opus-4-5",
+    "system": "You are a coding assistant."
   }'
 ```
 
@@ -61,35 +54,25 @@ curl -X POST $LAP_URL/api/v1/managed_agents/agents \
 Cursor sessions accept `environment` fields for repository and PR settings:
 
 ```bash
-curl -X POST $LAP_URL/api/v1/sessions \
+SESSION=$(curl -s -X POST $LAP_URL/session \
   -H "Authorization: Bearer $MASTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{
+    "runtime": "cursor",
     "agent_id": "<agent-id>",
+    "prompt": "Fix the failing tests in src/utils.ts",
     "environment": {
-      "repo": "your-org/your-repo",
-      "branch": "main",
+      "repository": "https://github.com/your-org/your-repo",
+      "ref": "main",
       "auto_create_pr": false
     }
-  }'
+  }' | jq -r .id)
 ```
 
-## 5. Send a message
+## 5. Stream events
 
 ```bash
-curl -X POST $LAP_URL/api/v1/sessions/<session-id>/events \
-  -H "Authorization: Bearer $MASTER_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "type": "human_turn",
-    "content": "Fix the failing tests in src/utils.ts"
-  }'
-```
-
-## 6. Stream events
-
-```bash
-curl -N "$LAP_URL/api/v1/sessions/<session-id>/events/stream" \
+curl -N "$LAP_URL/v1/sessions/$SESSION/events/stream" \
   -H "Authorization: Bearer $MASTER_KEY"
 ```
 
@@ -103,31 +86,8 @@ Cursor's native events (`assistant`, `tool_call`, `status`, `result`) are normal
 | `result` | `agent.tool_result` |
 | `status` (idle) | `session.status_idle` |
 
-## SDK usage (Rust)
-
-```rust
-use lap_sdk::{Lap, LapConfig};
-
-let client = Lap::new(LapConfig::cursor(std::env::var("CURSOR_API_KEY")?));
-
-let agent = client.beta().agents().create(CreateAgentParams {
-    name: "my-cursor-agent".into(),
-    model: "claude-opus-4-5".into(),
-    ..Default::default()
-}).await?;
-
-let session = client.beta().sessions().create(CreateSessionParams {
-    agent_id: agent.id.clone(),
-    environment: Some(AgentWorkspace {
-        repo: Some("your-org/your-repo".into()),
-        branch: Some("main".into()),
-        auto_create_pr: Some(false),
-        ..Default::default()
-    }),
-    ..Default::default()
-}).await?;
-```
+See [Internal SDK contract](/engineering/sdk-api-contract) for the Rust SDK types.
 
 <Note>
-Cursor sessions start immediately on creation — no need to send an initial event to kick off the run.
+Cursor sessions can start immediately when you include `prompt` in the `POST /session` body.
 </Note>

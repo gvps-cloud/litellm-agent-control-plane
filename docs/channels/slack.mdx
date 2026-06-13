@@ -3,64 +3,55 @@ title: "Slack"
 description: "Talk to your agents directly from Slack."
 ---
 
-The Slack channel lets your team trigger agent sessions and receive responses without leaving Slack. Mention the bot or use a slash command to start a conversation.
+The Slack channel lets your team trigger agent sessions and receive responses without leaving Slack. Each connected LAP agent gets its own dedicated Slack app.
 
 ## Prerequisites
 
 - LiteLLM Agent Platform deployed and accessible
-- A Slack app with bot token and signing secret
+- A LAP agent
+- A Slack workspace where you can create or install apps
 
-## 1. Create a Slack app
+## 1. Open the agent Slack flow
 
-Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**.
+In the LAP UI, open **Agents**, choose an agent, then click **Connect to Slack**.
 
-Under **OAuth & Permissions**, add these bot token scopes:
+The flow opens Slack with a pre-filled manifest. The manifest uses agent-specific callback URLs:
 
-- `app_mentions:read`
-- `chat:write`
-- `channels:history`
-- `im:history`
-- `im:write`
+```text
+$LAP_URL/api/agents/<agent-id>/slack/events
+$LAP_URL/api/agents/<agent-id>/slack/interactivity
+$LAP_URL/host-oauth-callback/<provider-id>
+```
 
-Install the app to your workspace and copy the **Bot User OAuth Token** (`xoxb-...`).
+## 2. Create the Slack app
 
-## 2. Configure the LAP Slack integration
+Review the pre-filled manifest in Slack, create the app, then return to LAP.
 
-In **Settings → Integrations → Slack**, add:
+The app includes the bot scopes needed for mentions, direct messages, channel messages, and replies.
 
-| Field | Value |
-|---|---|
-| Bot Token | `xoxb-...` |
-| Signing Secret | From **Basic Information → App Credentials** |
-| Default Agent | The agent to route messages to |
+## 3. Save app credentials
 
-Or via the API:
+Paste these values from Slack's **Basic Information** page back into the LAP flow:
+
+- App ID
+- Client ID
+- Client Secret
+- Signing Secret
+
+LAP stores the secrets in the vault and saves only key names on the agent config.
+
+## 4. Connect OAuth
+
+Click **Connect OAuth**. LAP creates a one-time state value through:
 
 ```bash
-curl -X POST $LAP_URL/api/v1/integrations/slack \
-  -H "Authorization: Bearer $MASTER_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "bot_token": "xoxb-...",
-    "signing_secret": "...",
-    "default_agent_id": "<agent-id>"
-  }'
+curl -X POST $LAP_URL/api/agents/<agent-id>/slack/oauth-state \
+  -H "Authorization: Bearer $MASTER_KEY"
 ```
 
-## 3. Set the event subscription URL
+Slack redirects back to `$LAP_URL/host-oauth-callback/<provider-id>`. On success, LAP stores the bot token in the vault and marks the agent as connected.
 
-In your Slack app → **Event Subscriptions**, set the Request URL to:
-
-```
-$LAP_URL/integrations/slack/events
-```
-
-Subscribe to these bot events:
-
-- `app_mention`
-- `message.im`
-
-## 4. Talk to your agent
+## 5. Talk to your agent
 
 **Mention the bot in any channel:**
 
@@ -78,10 +69,4 @@ The bot starts a new agent session, streams the response, and posts it back in t
 
 ## Routing to different agents
 
-Tag a specific agent by name in your message:
-
-```
-@YourBot [cursor-agent] fix the failing tests in src/utils.ts
-```
-
-Or configure per-channel defaults in **Settings → Integrations → Slack → Channel routing**.
+Create a separate Slack app for each LAP agent you want to expose. Each app points to its own `/api/agents/<agent-id>/slack/...` endpoints.

@@ -36,14 +36,15 @@ In the UI, click **New Agent**, choose `local-opencode` as the runtime, select a
 Or via the API:
 
 ```bash
-curl -X POST http://localhost:4000/api/v1/managed_agents/agents \
+curl -X POST http://localhost:4000/api/agents \
   -H "Authorization: Bearer sk-local" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "my-opencode-agent",
+    "owner_id": "local-user",
     "runtime": "local-opencode",
     "model": "claude-opus-4-5",
-    "system_prompt": "You are a senior software engineer."
+    "system": "You are a senior software engineer."
   }'
 ```
 
@@ -54,20 +55,18 @@ Select your agent in the UI and click **Run**. Type a message in the chat panel 
 Or via the API:
 
 ```bash
-# Start a session
-SESSION=$(curl -s -X POST http://localhost:4000/api/v1/sessions \
+# Start and run a session
+SESSION=$(curl -s -X POST http://localhost:4000/session \
   -H "Authorization: Bearer sk-local" \
   -H "Content-Type: application/json" \
-  -d '{"agent_id":"<agent-id>"}' | jq -r .id)
-
-# Send a message
-curl -X POST "http://localhost:4000/api/v1/sessions/$SESSION/events" \
-  -H "Authorization: Bearer sk-local" \
-  -H "Content-Type: application/json" \
-  -d '{"type":"human_turn","content":"Add type annotations to all functions in src/"}'
+  -d '{
+    "runtime": "local-opencode",
+    "agent_id": "<agent-id>",
+    "prompt": "Add type annotations to all functions in src/"
+  }' | jq -r .id)
 
 # Stream the response
-curl -N "http://localhost:4000/api/v1/sessions/$SESSION/events/stream" \
+curl -N "http://localhost:4000/v1/sessions/$SESSION/events/stream" \
   -H "Authorization: Bearer sk-local"
 ```
 
@@ -89,4 +88,4 @@ This registers both `local-opencode` and `local-deepagents` in the UI.
 
 ## Configuration
 
-OpenCode runtime configuration lives in the `docker-compose.yml` `opencode` service block. You can override the default model and tool settings via environment variables in that block.
+OpenCode runtime configuration lives in the `compose.yaml` `opencode` service block. You can override the default model and tool settings via environment variables in that block.

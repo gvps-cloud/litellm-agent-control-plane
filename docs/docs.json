@@ -38,6 +38,38 @@
       "href": "https://github.com/LiteLLM-Labs/litellm-agent-platform"
     }
   },
+  "redirects": [
+    {
+      "source": "/quickstart/claude-managed-agents",
+      "destination": "/runtimes/claude-managed-agents",
+      "permanent": true
+    },
+    {
+      "source": "/quickstart/gemini-antigravity",
+      "destination": "/runtimes/gemini-antigravity",
+      "permanent": true
+    },
+    {
+      "source": "/quickstart/cursor",
+      "destination": "/runtimes/cursor",
+      "permanent": true
+    },
+    {
+      "source": "/quickstart/opencode",
+      "destination": "/runtimes/opencode",
+      "permanent": true
+    },
+    {
+      "source": "/quickstart/deepagents",
+      "destination": "/runtimes/deepagents",
+      "permanent": true
+    },
+    {
+      "source": "/quickstart/elastic-runtime",
+      "destination": "/runtimes/elastic-runtime",
+      "permanent": true
+    }
+  ],
   "navigation": {
     "tabs": [
       {
@@ -53,11 +85,12 @@
           {
             "group": "Runtimes",
             "pages": [
-              "quickstart/claude-managed-agents",
-              "quickstart/cursor",
-              "quickstart/opencode",
-              "quickstart/deepagents",
-              "quickstart/elastic-runtime"
+              "runtimes/claude-managed-agents",
+              "runtimes/gemini-antigravity",
+              "runtimes/cursor",
+              "runtimes/opencode",
+              "runtimes/deepagents",
+              "runtimes/elastic-runtime"
             ]
           },
           {
@@ -65,7 +98,8 @@
             "pages": [
               "channels/ui",
               "channels/api",
-              "channels/slack"
+              "channels/slack",
+              "channels/teams"
             ]
           },
           {
@@ -79,15 +113,9 @@
           {
             "group": "Engineering",
             "pages": [
-              "engineering/gateway-architecture",
-              "engineering/gateway-authentication",
-              "engineering/mcp-gateway",
-              "engineering/managed-agents-sdk",
-              "engineering/sdk-api-contract",
-              "engineering/cursor-runtime",
-              "engineering/multiple-runtime-harnesses",
               "engineering/debugging",
-              "engineering/contributing"
+              "engineering/contributing",
+              "engineering/sdk-api-contract"
             ]
           }
         ]
@@ -120,6 +148,9 @@
           {
             "group": "Runtimes",
             "pages": [
+              "api-reference/runtimes/list-built-in",
+              "api-reference/runtimes/save-credentials",
+              "api-reference/runtimes/delete-credentials",
               "api-reference/runtimes/list",
               "api-reference/runtimes/create",
               "api-reference/runtimes/update",

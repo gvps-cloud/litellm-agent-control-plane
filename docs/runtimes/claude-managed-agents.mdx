@@ -1,0 +1,87 @@
+---
+title: "Claude Managed Agents"
+description: "Run agents using Anthropic's Claude Managed Agents runtime."
+---
+
+Claude Managed Agents is Anthropic's hosted agent runtime — the platform proxies agent creation, session management, and event streaming through your LiteLLM gateway so your team never touches Anthropic credentials directly.
+
+## Prerequisites
+
+- LiteLLM Agent Platform running (`docker compose up` or deployed)
+- Anthropic API key
+
+## 1. Add your Anthropic API key
+
+Open **Settings → Credentials** in the UI and add your Anthropic API key. The platform stores it encrypted and injects it at the wire level.
+
+Or via the API:
+
+```bash
+curl -X PUT $LAP_URL/api/agent-runtimes/claude_managed_agents/credentials \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "api_key": "<your-anthropic-api-key>",
+    "api_base": "https://api.anthropic.com"
+  }'
+```
+
+## 2. Select the built-in runtime
+
+`claude_managed_agents` is a built-in runtime. You do not need to register a custom harness for it.
+
+## 3. Create an agent
+
+In the UI, click **New Agent**, choose `claude_managed_agents` as the runtime, select a model, and save.
+
+Or via the API:
+
+```bash
+curl -X POST $LAP_URL/api/agents \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "my-claude-agent",
+    "owner_id": "local-user",
+    "runtime": "claude_managed_agents",
+    "model": "claude-opus-4-5",
+    "system": "You are a helpful assistant."
+  }'
+```
+
+## 4. Start a session and stream events
+
+```bash
+SESSION=$(curl -s -X POST $LAP_URL/session \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "runtime": "claude_managed_agents",
+    "agent_id": "<agent-id>",
+    "prompt": "Summarize the latest changes in this repo."
+  }' | jq -r .id)
+
+curl -N "$LAP_URL/v1/sessions/$SESSION/events/stream" \
+  -H "Authorization: Bearer $MASTER_KEY"
+```
+
+Events follow the Anthropic Managed Agents SSE shape:
+
+```
+data: {"type":"session.status_running"}
+data: {"type":"agent.message","content":"Here are the latest changes..."}
+data: {"type":"session.status_idle"}
+```
+
+See [Internal SDK contract](/engineering/sdk-api-contract) for the Rust SDK types.
+
+## Event kinds
+
+| Event kind | Meaning |
+|---|---|
+| `session.status_running` | Agent is processing |
+| `agent.message` | Text output from the agent |
+| `agent.tool_use` | Agent is calling a tool |
+| `agent.tool_result` | Tool result returned |
+| `session.status_idle` | Turn complete |
+| `session.error` | Runtime error |

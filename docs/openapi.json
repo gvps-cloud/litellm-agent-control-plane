@@ -211,13 +211,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "id": { "type": "string" },
-                      "label": { "type": "string" },
-                      "created_at": { "type": "string", "format": "date-time" }
+                  "type": "object",
+                  "properties": {
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "label": { "type": "string" },
+                          "created_at": { "type": "string", "format": "date-time" }
+                        }
+                      }
                     }
                   }
                 }
@@ -281,6 +286,86 @@
         }
       }
     },
+    "/api/agent-runtimes": {
+      "get": {
+        "operationId": "listAgentRuntimes",
+        "summary": "List built-in agent runtimes",
+        "tags": ["Runtimes"],
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Built-in runtime catalog and credential status",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AgentRuntimesResponse" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/agent-runtimes/{runtime}/credentials": {
+      "put": {
+        "operationId": "saveAgentRuntimeCredential",
+        "summary": "Save credentials for a built-in runtime",
+        "tags": ["Runtimes"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "runtime",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["claude_managed_agents", "cursor", "gemini_antigravity", "elastic_agent_builder"]
+            },
+            "example": "cursor"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SaveRuntimeCredentialRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Credential saved",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AgentRuntimesResponse" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAgentRuntimeCredential",
+        "summary": "Delete credentials for a built-in runtime",
+        "tags": ["Runtimes"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "runtime",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["claude_managed_agents", "cursor", "gemini_antigravity", "elastic_agent_builder"]
+            },
+            "example": "cursor"
+          }
+        ],
+        "responses": {
+          "200": { "description": "Credential deleted" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
     "/api/runtime-harnesses": {
       "get": {
         "operationId": "listRuntimeHarnesses",
@@ -292,10 +377,7 @@
             "description": "List of registered runtimes",
             "content": {
               "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": { "$ref": "#/components/schemas/RuntimeHarness" }
-                }
+                "schema": { "$ref": "#/components/schemas/RuntimeHarnessesResponse" }
               }
             }
           },
@@ -311,16 +393,16 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/CreateRuntimeHarnessRequest" }
+              "schema": { "$ref": "#/components/schemas/UpdateRuntimeHarnessRequest" }
             }
           }
         },
         "responses": {
-          "201": {
+          "200": {
             "description": "Runtime registered",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/RuntimeHarness" }
+                "schema": { "$ref": "#/components/schemas/RuntimeHarnessesResponse" }
               }
             }
           },
@@ -346,7 +428,14 @@
           }
         },
         "responses": {
-          "200": { "description": "Updated" },
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RuntimeHarnessesResponse" }
+              }
+            }
+          },
           "401": { "description": "Unauthorized" },
           "404": { "description": "Harness not found" }
         }
@@ -360,13 +449,13 @@
           { "name": "alias", "in": "path", "required": true, "schema": { "type": "string" }, "example": "cursor" }
         ],
         "responses": {
-          "204": { "description": "Deleted" },
+          "200": { "description": "Deleted" },
           "401": { "description": "Unauthorized" },
           "404": { "description": "Harness not found" }
         }
       }
     },
-    "/api/v1/managed_agents/agents": {
+    "/api/agents": {
       "get": {
         "operationId": "listAgents",
         "summary": "List agents",
@@ -377,10 +466,7 @@
             "description": "List of agents",
             "content": {
               "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": { "$ref": "#/components/schemas/Agent" }
-                }
+                "schema": { "$ref": "#/components/schemas/AgentsResponse" }
               }
             }
           },
@@ -413,14 +499,14 @@
         }
       }
     },
-    "/api/v1/managed_agents/agents/{id}": {
+    "/api/agents/{agent_id}": {
       "get": {
         "operationId": "getAgent",
         "summary": "Get an agent",
         "tags": ["Agents"],
         "security": [{ "BearerAuth": [] }],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+          { "name": "agent_id", "in": "path", "required": true, "schema": { "type": "string" } }
         ],
         "responses": {
           "200": {
@@ -441,7 +527,7 @@
         "tags": ["Agents"],
         "security": [{ "BearerAuth": [] }],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+          { "name": "agent_id", "in": "path", "required": true, "schema": { "type": "string" } }
         ],
         "requestBody": {
           "required": true,
@@ -470,16 +556,16 @@
         "tags": ["Agents"],
         "security": [{ "BearerAuth": [] }],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+          { "name": "agent_id", "in": "path", "required": true, "schema": { "type": "string" } }
         ],
         "responses": {
-          "204": { "description": "Deleted" },
+          "200": { "description": "Deleted" },
           "401": { "description": "Unauthorized" },
           "404": { "description": "Agent not found" }
         }
       }
     },
-    "/api/v1/sessions": {
+    "/session": {
       "post": {
         "operationId": "createSession",
         "summary": "Create a session",
@@ -494,7 +580,7 @@
           }
         },
         "responses": {
-          "201": {
+          "200": {
             "description": "Session created",
             "content": {
               "application/json": {
@@ -506,45 +592,76 @@
         }
       }
     },
-    "/api/v1/sessions/{id}/events": {
+    "/session/{session_id}/prompt_async": {
       "post": {
-        "operationId": "sendSessionEvent",
-        "summary": "Send an event to a session",
+        "operationId": "sendSessionPrompt",
+        "summary": "Queue a prompt for a session",
         "tags": ["Sessions"],
         "security": [{ "BearerAuth": [] }],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+          { "name": "session_id", "in": "path", "required": true, "schema": { "type": "string" } }
         ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["type", "content"],
-                "properties": {
-                  "type": { "type": "string", "enum": ["human_turn"], "example": "human_turn" },
-                  "content": { "type": "string", "example": "Summarize the repo README." }
-                }
-              }
+              "schema": { "$ref": "#/components/schemas/PromptRequest" }
             }
           }
         },
         "responses": {
-          "200": { "description": "Event accepted" },
+          "204": { "description": "Prompt queued" },
           "401": { "description": "Unauthorized" },
           "404": { "description": "Session not found" }
         }
       }
     },
-    "/api/v1/sessions/{id}/events/stream": {
+    "/v1/sessions/{session_id}/events": {
+      "get": {
+        "operationId": "listSessionEvents",
+        "summary": "List session events",
+        "tags": ["Sessions"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "session_id", "in": "path", "required": true, "schema": { "type": "string" } },
+          {
+            "name": "key",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "API key alternative to the Authorization header."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored or provider-backed runtime events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/AgentEvent" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Session not found" }
+        }
+      }
+    },
+    "/v1/sessions/{session_id}/events/stream": {
       "get": {
         "operationId": "streamSessionEvents",
         "summary": "Stream session events (SSE)",
         "tags": ["Sessions"],
         "security": [{ "BearerAuth": [] }],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "session_id", "in": "path", "required": true, "schema": { "type": "string" } },
           {
             "name": "key",
             "in": "query",
@@ -567,7 +684,7 @@
         }
       }
     },
-    "/mcp/{server_name}": {
+    "/mcp/{server_id}": {
       "post": {
         "operationId": "mcpProxy",
         "summary": "Proxy to a named MCP server",
@@ -575,7 +692,7 @@
         "security": [{ "BearerAuth": [] }],
         "parameters": [
           {
-            "name": "server_name",
+            "name": "server_id",
             "in": "path",
             "required": true,
             "schema": { "type": "string" },
@@ -617,28 +734,86 @@
       "RuntimeHarness": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "alias": { "type": "string", "example": "cursor" },
+          "alias": { "type": "string", "example": "local-opencode" },
           "api_spec": {
             "type": "string",
-            "enum": ["claude_managed_agents", "cursor", "gemini_antigravity", "elastic"],
-            "example": "cursor"
+            "enum": ["claude_managed_agents", "cursor", "gemini_antigravity", "elastic_agent_builder"],
+            "example": "claude_managed_agents"
           },
-          "api_base": { "type": "string", "example": "https://api2.cursor.sh" },
-          "created_at": { "type": "string", "format": "date-time" }
+          "display_name": { "type": "string", "example": "local-opencode" },
+          "api_base": { "type": "string", "example": "http://opencode:8080" },
+          "is_default": { "type": "boolean" },
+          "connected": { "type": "boolean" },
+          "masked_api_key": { "type": "string", "nullable": true },
+          "tools": { "type": "array", "items": { "type": "object" } }
+        }
+      },
+      "RuntimeHarnessesResponse": {
+        "type": "object",
+        "properties": {
+          "harnesses": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/RuntimeHarness" }
+          }
+        }
+      },
+      "AgentRuntime": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": ["claude_managed_agents", "cursor", "gemini_antigravity", "elastic_agent_builder"]
+          },
+          "name": { "type": "string", "example": "Cursor" },
+          "default_api_base": { "type": "string", "example": "https://api.cursor.com" },
+          "credential_provider_id": { "type": "string", "example": "cursor" },
+          "credential_provider_name": { "type": "string", "example": "Cursor" },
+          "tools": { "type": "array", "items": { "type": "object" } },
+          "connected": { "type": "boolean" },
+          "api_base": { "type": "string", "nullable": true },
+          "masked_api_key": { "type": "string", "nullable": true }
+        }
+      },
+      "AgentRuntimesResponse": {
+        "type": "object",
+        "properties": {
+          "runtimes": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AgentRuntime" }
+          }
+        }
+      },
+      "SaveRuntimeCredentialRequest": {
+        "type": "object",
+        "required": ["api_key"],
+        "properties": {
+          "api_key": { "type": "string", "example": "sk-..." },
+          "api_base": {
+            "type": "string",
+            "description": "Optional. Defaults to the runtime's built-in base URL when omitted.",
+            "example": "https://api.cursor.com"
+          }
         }
       },
       "CreateRuntimeHarnessRequest": {
         "type": "object",
-        "required": ["alias", "api_spec", "api_base"],
+        "required": ["alias", "api_spec", "api_base", "api_key"],
         "properties": {
-          "alias": { "type": "string", "example": "cursor" },
+          "alias": { "type": "string", "example": "local-opencode" },
           "api_spec": {
             "type": "string",
-            "enum": ["claude_managed_agents", "cursor", "gemini_antigravity", "elastic"],
-            "example": "cursor"
+            "enum": ["claude_managed_agents", "cursor", "gemini_antigravity", "elastic_agent_builder"],
+            "example": "claude_managed_agents"
           },
-          "api_base": { "type": "string", "example": "https://api2.cursor.sh" }
+          "api_base": { "type": "string", "example": "http://opencode:8080" },
+          "api_key": { "type": "string", "example": "local-opencode-key" }
+        }
+      },
+      "UpdateRuntimeHarnessRequest": {
+        "type": "object",
+        "properties": {
+          "api_base": { "type": "string", "example": "http://opencode:8080" },
+          "api_key": { "type": "string", "example": "local-opencode-key" }
         }
       },
       "Agent": {
@@ -646,31 +821,51 @@
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string", "example": "my-agent" },
-          "runtime": { "type": "string", "example": "cursor" },
           "model": { "type": "string", "example": "claude-opus-4-5" },
-          "system_prompt": { "type": "string" },
-          "memory_enabled": { "type": "boolean", "example": false },
-          "tools": { "type": "array", "items": { "type": "string" }, "example": ["bash", "file_read"] },
-          "created_at": { "type": "string", "format": "date-time" }
+          "system": { "type": "string" },
+          "tools": { "type": "object" },
+          "config": {
+            "type": "object",
+            "description": "Runtime-specific config. For runtime-backed agents this usually includes `runtime`."
+          },
+          "owner_id": { "type": "string", "nullable": true },
+          "status": { "type": "string", "example": "paused" },
+          "description": { "type": "string", "nullable": true },
+          "harness": { "type": "string", "example": "claude-code" },
+          "created_at": { "type": "integer", "format": "int64" }
+        }
+      },
+      "AgentsResponse": {
+        "type": "object",
+        "properties": {
+          "agents": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Agent" }
+          }
         }
       },
       "CreateAgentRequest": {
         "type": "object",
-        "required": ["name", "runtime", "model"],
+        "required": ["name", "owner_id"],
         "properties": {
           "name": { "type": "string", "example": "my-agent" },
+          "owner_id": { "type": "string", "example": "local-user" },
           "runtime": {
             "type": "string",
             "example": "cursor",
-            "description": "Alias of a registered runtime harness"
+            "description": "Built-in runtime ID or registered runtime harness alias. Stored in agent config."
           },
           "model": { "type": "string", "example": "claude-opus-4-5" },
-          "system_prompt": { "type": "string", "example": "You are a helpful assistant." },
-          "memory_enabled": { "type": "boolean", "default": false },
+          "system": { "type": "string", "example": "You are a helpful assistant." },
+          "description": { "type": "string" },
+          "prompt": { "type": "string", "description": "Fallback system prompt when `system` is omitted." },
+          "config": { "type": "object" },
           "tools": {
-            "type": "array",
-            "items": { "type": "string" },
-            "example": ["bash", "file_read", "file_write"]
+            "description": "Runtime tool definitions.",
+            "oneOf": [
+              { "type": "array", "items": { "type": "object" } },
+              { "type": "object" }
+            ]
           }
         }
       },
@@ -678,27 +873,81 @@
         "type": "object",
         "properties": {
           "id": { "type": "string" },
+          "title": { "type": "string" },
+          "agent": { "type": "string" },
           "agent_id": { "type": "string" },
+          "harness": { "type": "string" },
+          "runtime": { "type": "string" },
+          "runtime_agent_ref_id": { "type": "string", "nullable": true },
+          "provider_session_id": { "type": "string", "nullable": true },
+          "provider_run_id": { "type": "string", "nullable": true },
           "status": {
             "type": "string",
             "enum": ["pending", "running", "idle", "error"],
             "example": "idle"
           },
-          "created_at": { "type": "string", "format": "date-time" }
+          "environment": { "type": "object" },
+          "time": {
+            "type": "object",
+            "properties": {
+              "created": { "type": "integer", "format": "int64" },
+              "updated": { "type": "integer", "format": "int64", "nullable": true }
+            }
+          }
         }
       },
       "CreateSessionRequest": {
         "type": "object",
-        "required": ["agent_id"],
         "properties": {
+          "title": { "type": "string" },
+          "agent": {
+            "type": "string",
+            "description": "Agent ID or configured harness ID. For local DB agents, use `agent_id` or `agent`."
+          },
           "agent_id": { "type": "string" },
+          "harness": { "type": "string" },
+          "runtime": {
+            "type": "string",
+            "description": "Built-in runtime ID or runtime harness alias. When present, creates a runtime-backed session.",
+            "example": "cursor"
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Optional initial prompt. If present, the runtime session starts immediately."
+          },
           "environment": {
             "type": "object",
             "description": "Runtime-specific environment settings",
             "properties": {
-              "repo": { "type": "string", "example": "your-org/your-repo" },
-              "branch": { "type": "string", "example": "main" },
+              "repository": { "type": "string", "example": "https://github.com/your-org/your-repo" },
+              "ref": { "type": "string", "example": "main" },
               "auto_create_pr": { "type": "boolean", "default": false }
+            }
+          },
+          "timezone": { "type": "string", "example": "America/Los_Angeles" },
+          "tz": { "type": "string", "example": "America/Los_Angeles" }
+        }
+      },
+      "PromptRequest": {
+        "type": "object",
+        "required": ["model", "parts"],
+        "properties": {
+          "model": {
+            "type": "object",
+            "required": ["modelID"],
+            "properties": {
+              "modelID": { "type": "string", "example": "claude-opus-4-5" }
+            }
+          },
+          "parts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["type", "text"],
+              "properties": {
+                "type": { "type": "string", "enum": ["text"], "example": "text" },
+                "text": { "type": "string", "example": "Summarize the repo README." }
+              }
             }
           }
         }

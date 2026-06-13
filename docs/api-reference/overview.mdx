@@ -17,7 +17,7 @@ The LiteLLM Agent Platform exposes a REST API for managing runtimes, agents, and
 All endpoints require your master key:
 
 ```bash
-curl https://litellm-rust.onrender.com/api/v1/managed_agents/agents \
+curl https://litellm-rust.onrender.com/api/agents \
   -H "Authorization: Bearer $MASTER_KEY"
 ```
 
@@ -41,6 +41,6 @@ The raw spec is at `/openapi.json` — import it into Postman, Insomnia, or any 
 | **Messages** | Anthropic-compatible chat completions |
 | **Agents** | Create and manage agents |
 | **Sessions** | Create sessions and stream events |
-| **Runtimes** | Register and manage runtime harnesses |
+| **Runtimes** | Configure built-in runtime credentials and manage custom runtime harnesses |
 | **API Keys** | Issue and revoke gateway keys |
 | **MCP** | Proxy requests to MCP tool servers |

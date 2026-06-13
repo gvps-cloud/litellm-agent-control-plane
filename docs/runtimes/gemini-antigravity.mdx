@@ -1,0 +1,93 @@
+---
+title: "Gemini Antigravity"
+description: "Run agents using the Gemini Antigravity runtime."
+---
+
+The Gemini Antigravity runtime lets LAP create and run Gemini-backed managed agents through the same session API used by the other runtimes. LAP normalizes Gemini interaction events to the shared runtime event stream.
+
+## Prerequisites
+
+- LiteLLM Agent Platform running
+- Gemini API key
+
+## 1. Add your Gemini API key
+
+Open **Settings → Credentials** in the UI and add your Gemini API key.
+
+Or via the API:
+
+```bash
+curl -X PUT $LAP_URL/api/agent-runtimes/gemini_antigravity/credentials \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "api_key": "<your-gemini-api-key>",
+    "api_base": "https://generativelanguage.googleapis.com"
+  }'
+```
+
+## 2. Select the built-in runtime
+
+`gemini_antigravity` is a built-in runtime. You do not need to register a custom runtime harness unless you are proxying through your own Gemini-compatible service.
+
+## 3. Create an agent
+
+In the UI, click **New Agent**, choose `gemini_antigravity` as the runtime, and save.
+
+Or via the API:
+
+```bash
+curl -X POST $LAP_URL/api/agents \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "my-gemini-agent",
+    "owner_id": "local-user",
+    "runtime": "gemini_antigravity",
+    "model": "antigravity-preview-05-2026",
+    "system": "You are a coding assistant.",
+    "tools": [
+      { "type": "code_execution" },
+      { "type": "google_search" },
+      { "type": "url_context" }
+    ]
+  }'
+```
+
+## 4. Start a session with repo context
+
+Gemini sessions accept `environment` fields for repository context:
+
+```bash
+SESSION=$(curl -s -X POST $LAP_URL/session \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "runtime": "gemini_antigravity",
+    "agent_id": "<agent-id>",
+    "prompt": "Review this repository and summarize the main risks.",
+    "environment": {
+      "repository": "https://github.com/your-org/your-repo",
+      "ref": "main"
+    }
+  }' | jq -r .id)
+```
+
+## 5. Stream events
+
+```bash
+curl -N "$LAP_URL/v1/sessions/$SESSION/events/stream" \
+  -H "Authorization: Bearer $MASTER_KEY"
+```
+
+Gemini interaction events are normalized to the shared runtime event surface:
+
+| Gemini event | Normalized to |
+|---|---|
+| Running status | `session.status_running` |
+| Assistant text | `agent.message` |
+| Tool use | `agent.tool_use` |
+| Tool result | `agent.tool_result` |
+| Completion | `session.status_idle` |
+
+See [Internal SDK contract](/engineering/sdk-api-contract) for the Rust SDK types.
