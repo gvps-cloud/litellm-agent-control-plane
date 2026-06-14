@@ -53,10 +53,9 @@ pub(super) async fn create_runtime_session(
         }
     };
     state.agent_runs.track_run(&created.agent.id, &row.id);
-    let agent_model = Some(created.agent.model.clone()).filter(|m| !m.is_empty());
     if row.provider_run_id.is_none() {
         if let Some(prompt) = created.initial_user_prompt.as_deref() {
-            execute_runtime_prompt(state.clone(), pool, row.clone(), prompt.to_owned(), agent_model)
+            execute_runtime_prompt(state.clone(), pool, row.clone(), prompt.to_owned(), None)
                 .await?;
         } else {
             mark_session_idle(&state, pool, &row.id).await?;
